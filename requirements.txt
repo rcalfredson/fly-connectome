@@ -1,0 +1,4 @@
+neuprint-python==0.6.4
+pandas==2.2.3
+matplotlib==3.10.3
+python-dotenv==1.1.1
