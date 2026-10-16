@@ -22,6 +22,7 @@ from .connectivity import (
 )
 from .plotting import load_matrix, plot_heatmap
 from .anatomy import anatomical_heatmaps
+from .columns import column_analysis
 
 
 def save_json(path, value):
@@ -135,6 +136,12 @@ def main(argv=None):
     anatomical = commands.add_parser("anatomical", help="Order a saved extraction by instance annotations, offline")
     anatomical.add_argument("source", type=Path, help="Complete extraction directory")
     anatomical.add_argument("--output", type=Path, required=True, help="New directory for additional artifacts")
+    columns = commands.add_parser("columns", help="Aggregate PFNd → hDeltaB by annotated FB column, offline")
+    columns.add_argument("source", type=Path, help="Complete extraction directory")
+    columns.add_argument("--anatomical", type=Path, required=True, help="Complete anatomical ordering directory")
+    columns.add_argument("--output", type=Path, required=True, help="New directory for column summaries")
+    columns.add_argument("--show-column-caveat", action="store_true",
+                         help="Show the annotation caveat above column heatmaps (hidden by default)")
     args = parser.parse_args(argv)
     try:
         if args.command == "extract":
@@ -142,6 +149,12 @@ def main(argv=None):
         elif args.command == "anatomical":
             result = anatomical_heatmaps(args.source, args.output)
             print(f"Saved anatomical tables and heatmaps to {args.output}")
+            print(result["column_caveat"])
+        elif args.command == "columns":
+            result = column_analysis(args.source, args.anatomical, args.output,
+                                     show_column_caveat=args.show_column_caveat)
+            print(f"Saved column summaries and heatmaps to {args.output}")
+            print(result["validation"])
             print(result["column_caveat"])
         else:
             plot_heatmap(load_matrix(args.matrix), args.output_prefix, args.source_type, args.target_type)

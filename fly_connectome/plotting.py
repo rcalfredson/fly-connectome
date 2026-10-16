@@ -27,7 +27,8 @@ def load_matrix(path):
 
 def plot_heatmap(matrix, output_prefix, source_type, target_type, *, row_order=None, column_order=None,
                  row_labels=None, column_labels=None, row_groups=None, column_groups=None,
-                 ordering_label=None, note=None):
+                 ordering_label=None, note=None, xlabel=None, ylabel=None,
+                 title=None, colorbar_label="Synapse count", vmax=None):
     """Plot any explicit ordering; labels/groups are body-ID keyed and source agnostic."""
     matrix = order_matrix(matrix, row_order, column_order)
     height = max(4, 1.8 + 0.23 * len(matrix.index))
@@ -36,7 +37,8 @@ def plot_heatmap(matrix, output_prefix, source_type, target_type, *, row_order=N
     fig, ax = plt.subplots(figsize=(width, height), constrained_layout=True)
     try:
         image = ax.imshow(matrix.to_numpy(), cmap="viridis", vmin=0,
-                          vmax=max(1, int(matrix.to_numpy().max())), aspect="auto", interpolation="nearest")
+                          vmax=max(1, float(matrix.to_numpy().max())) if vmax is None else vmax,
+                          aspect="auto", interpolation="nearest")
         ax.set_xticks(range(len(matrix.columns)), labels=[column_labels[v] if column_labels else str(v)
                                                         for v in matrix.columns], rotation=90, fontsize=8)
         ax.set_yticks(range(len(matrix.index)), labels=[row_labels[v] if row_labels else str(v)
@@ -47,15 +49,15 @@ def plot_heatmap(matrix, output_prefix, source_type, target_type, *, row_order=N
                 for i in range(1, len(ids)):
                     if groups[ids[i]] != groups[ids[i - 1]]:
                         line(i - 0.5, color="white", linewidth=0.65, alpha=0.8)
-        ax.set_xlabel(f"Postsynaptic {target_type} body ID")
-        ax.set_ylabel(f"Presynaptic {source_type} body ID")
-        title = f"{source_type} → {target_type} | raw connectivity"
+        ax.set_xlabel(xlabel or f"Postsynaptic {target_type} body ID")
+        ax.set_ylabel(ylabel or f"Presynaptic {source_type} body ID")
+        title = title or f"{source_type} → {target_type} | raw connectivity"
         if ordering_label:
             title += f" | {ordering_label}"
         ax.set_title(title)
         if note:
             fig.suptitle(note, fontsize=9)
-        fig.colorbar(image, ax=ax, label="Synapse count")
+        fig.colorbar(image, ax=ax, label=colorbar_label)
         prefix = Path(output_prefix)
         prefix.parent.mkdir(parents=True, exist_ok=True)
         for extension in ["png", "pdf"]:

@@ -189,6 +189,54 @@ body-ID permutations and body-ID-keyed plot labels/groups can also support futur
 morphology-derived orders without modifying extraction. Morphology analysis is
 not implemented here.
 
+## PFNd → hDeltaB column aggregation
+
+Aggregate the saved forward matrix offline, using the reviewed anatomical tables:
+
+```bash
+python -m fly_connectome columns results/pfnd-hdeltab-v1.0 \
+  --anatomical results/pfnd-hdeltab-anatomical-v1.0 \
+  --output results/pfnd-hdeltab-columns-v1.0
+```
+
+The output directory must be new. Rows follow PFNd C1–C8 and columns follow
+hDeltaB C1–C12 numerically, with no shifting, reversal, or clustering. These
+type-specific annotation indices do not establish shared physical locations;
+the summaries alone do not establish a directional transformation. Dynamics,
+path integration, morphology, and synapse locations are outside this analysis.
+
+The annotation caveat above the column heatmaps is hidden by default. Add
+`--show-column-caveat` to display it. The caveat remains recorded in the manifest
+and ranked table regardless of this plot setting.
+
+For each of the 96 column pairs, total weight sums every directed neuron-pair
+synapse count. Mean weight divides that total by **all possible pairs**
+(`source_neurons × target_neurons`), including zeros. Connected pairs count
+weights greater than zero, and connection density is connected / possible pairs.
+Zero means no connection was reported in the queried dataset, rather than proof
+of biological absence. Counts do not specify physiological efficacy.
+
+| Output | Contents |
+| --- | --- |
+| `PFNd_to_hDeltaB_column_{total,mean}_matrix.csv` | Two 8 × 12 matrices |
+| `PFNd_to_hDeltaB_column_{total,mean}.{png,pdf}` | Heatmaps with linear zero-to-maximum scales and explicit units |
+| `PFNd_to_hDeltaB_column_summary.csv` | All 96 pairs, total/mean weight, population/pair counts, density, and both ranks |
+| `PFNd_to_hDeltaB_column_rankings.md` | Top three positions for each source column by total and mean, with ties included |
+| `column_aggregation.json` | Formulas, input SHA-256 hashes, dataset, caveats, and validation results |
+
+Ranks descend within each PFNd column. Ties share competition rank (1, 1, 3),
+and tied entries display in numerical hDeltaB column order. The ranked table
+includes all entries at rank ≤ 3; the summary CSV retains every partner.
+
+Before writing, validation requires exactly 40 unique PFNd and 19 unique hDeltaB
+neurons, all 8/12 groups, agreement of saved order tables with parsed population
+annotations, and equality of the forward matrix with both saved edges and the
+anatomically ordered matrix. Aggregation must conserve total weights, possible
+pairs, and connected pairs. SHA-256 hashes of CSV/JSON inputs in both source
+directories (including both original matrices and ordering tables) are checked
+again after output generation. Only a manifest with `status: complete` denotes
+success; existing source artifacts are preserved.
+
 ## Tests
 
 ```bash
