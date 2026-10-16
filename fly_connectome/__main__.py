@@ -21,6 +21,7 @@ from .connectivity import (
     type_inventory,
 )
 from .plotting import load_matrix, plot_heatmap
+from .anatomy import anatomical_heatmaps
 
 
 def save_json(path, value):
@@ -131,10 +132,17 @@ def main(argv=None):
     plotting.add_argument("--output-prefix", type=Path, required=True)
     plotting.add_argument("--source-type", choices=["PFNd", "hDeltaB"], required=True)
     plotting.add_argument("--target-type", choices=["PFNd", "hDeltaB"], required=True)
+    anatomical = commands.add_parser("anatomical", help="Order a saved extraction by instance annotations, offline")
+    anatomical.add_argument("source", type=Path, help="Complete extraction directory")
+    anatomical.add_argument("--output", type=Path, required=True, help="New directory for additional artifacts")
     args = parser.parse_args(argv)
     try:
         if args.command == "extract":
             extract(args.output)
+        elif args.command == "anatomical":
+            result = anatomical_heatmaps(args.source, args.output)
+            print(f"Saved anatomical tables and heatmaps to {args.output}")
+            print(result["column_caveat"])
         else:
             plot_heatmap(load_matrix(args.matrix), args.output_prefix, args.source_type, args.target_type)
     except (ValidationError, FileExistsError) as exc:

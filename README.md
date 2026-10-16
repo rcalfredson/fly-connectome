@@ -138,6 +138,57 @@ plot_heatmap(matrix, "results/reordered", "PFNd", "hDeltaB",
              column_order=list(matrix.columns))
 ```
 
+## Anatomical ordering from saved annotations
+
+Generate additional artifacts offline from a complete extraction:
+
+```bash
+python -m fly_connectome anatomical results/pfnd-hdeltab-v1.0 \
+  --output results/pfnd-hdeltab-anatomical-v1.0
+```
+
+The output directory must be new. The source extraction, body-ID heatmaps, and
+raw matrices are preserved. Population membership still comes from exact type
+annotations. Every neuron remains individually represented, including neurons
+with identical instances and neurons with no reported connections.
+
+PFNd rows are sorted by numeric FB column, PB side (L before R), then body ID.
+hDeltaB columns are sorted by numeric FB column, then body ID. The reverse
+heatmap reuses these population orders with axes exchanged. Body ID breaks ties
+reproducibly and has no anatomical meaning; the hDeltaB instance number preceding
+`_C` is retained for reference but is not a sort key. Unexpected or missing
+instances, duplicate bodies, and inconsistent PFNd PB/FB mappings stop processing.
+The initial parser explicitly supports the inspected MaleCNS v1.0 conventions:
+`PFNd(PB04)_[LR]#_C#` and `hDeltaB_##_C#`.
+
+**PFNd C1–C8 and hDeltaB C1–C12 are within-type annotation indices. They have
+not been established as directly comparable spatial coordinates.** The plot
+does not imply that matching C numbers align anatomically, assign angular
+coordinates, or identify the particular hDeltaB arbor indexed by C. Parenthetical
+`PB04` is a historical identifier, not a glomerulus index. See the
+[MaleCNS annotator's naming clarification](https://groups.google.com/g/neuprint/c/HrafALsJ13A).
+
+| Additional output | Contents |
+| --- | --- |
+| `PFNd_anatomical_order.csv`, `hDeltaB_anatomical_order.csv` | One-based order, body ID, original instance, parsed column/PB indices, source and display label |
+| `*_anatomical_matrix.csv` | Complete raw-count matrix with only axes permuted |
+| `*_anatomical.{png,pdf}` | Instance/body-ID labels and boundaries between anatomical column groups |
+| `anatomical_ordering.json` | Completion status, sort conventions, caveat, source metadata and SHA-256 hashes, validation results |
+
+Each heatmap retains the same linear zero-to-maximum color limits as its original
+direction. Before writing artifacts, the workflow reconstructs both matrices
+from saved connections and population lists, verifies every entry and axis,
+checks that anatomical ordering is a complete permutation and reverses without
+changing values, and verifies `26913 → 515192 = 137`. Input hashes are checked
+again after plotting. Only `status: complete` in the new manifest denotes success.
+
+Ordering uses annotations alone, without connectivity clustering, normalization,
+or aggregation. This independence describes the implementation; the original
+curation's independence from connectivity evidence remains unverified. Generic
+body-ID permutations and body-ID-keyed plot labels/groups can also support future
+morphology-derived orders without modifying extraction. Morphology analysis is
+not implemented here.
+
 ## Tests
 
 ```bash
