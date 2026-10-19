@@ -477,6 +477,148 @@ The population fraction heatmap hides the footer beginning "Anatomical counts"
 by default. Add `--show-fraction-caveat` to `inputs` or `inputs-plot` to display it.
 The caveat remains in the census metadata regardless of this plot setting.
 
+## Initial feedforward rate model
+
+Run the first dynamical experiments entirely offline from the validated baseline:
+
+```bash
+python -m fly_connectome simulate results/pfnd-hdeltab-v1.0 \
+  --output results/pfnd-hdeltab-rate-v1.0
+```
+
+The command expects the reviewed **40 PFNd and 19 hDeltaB neurons**. It checks
+the saved population annotations, reconstructs the complete forward matrix from
+the saved body-pair edges, and verifies `26913 → 515192 = 137`. It never queries
+neuPrint or reads a token. Existing output directories are refused.
+
+Each neuron has one nonnegative activity value. The initial assumptions are:
+
+| Setting | Starting value or rule |
+| --- | --- |
+| Coupling | PFNd → hDeltaB only; `W[pre, post] = gain × raw contact count` |
+| Sign | Every included connection is assumed excitatory |
+| Gain | `0.001` per contact, shared globally; no row/column normalization |
+| Nonlinearity | Rectified linear, `ReLU(x) = max(0, x)` |
+| Time constant | Shared `tau = 0.1 s`, illustrative rather than physiologically fitted |
+| Baseline and initial activity | Zero for all neurons |
+| Noise | None |
+| Activity units | Arbitrary normalized rate units (a.u.), not Hz; values are not bounded at 1 |
+| Solver | Simultaneous explicit Euler updates, `dt = 0.001 s` |
+| Duration | 3 seconds per experiment |
+| Omitted dynamics | PFNd recurrence, hDeltaB feedback/recurrence, and every other population |
+
+The equations are:
+
+```text
+tau * d(PFNd)/dt   = -PFNd   + ReLU(external_drive)
+tau * d(hDeltaB)/dt = -hDeltaB + ReLU(PFNd @ W)
+```
+
+The presynaptic activity at the **old** timestep drives the postsynaptic update;
+neurons are not updated sequentially within a timestep. Raw integer counts and
+floating effective weights are saved separately, with their axes unchanged.
+Proportional coupling, its excitatory sign, and the shared time constant are
+modeling assumptions. They do not follow uniquely from anatomy.
+
+Six default experiments use external drive amplitude 1 per stimulated neuron:
+
+| Experiment | Drive schedule |
+| --- | --- |
+| `unstimulated` | No external drive |
+| `reference_pulse` | PFNd 26913, 0.2–0.3 s |
+| `group_pulse` | All left-PB L2 PFNd neurons, 0.2–0.3 s |
+| `sustained` | The same L2 group, 0.2–1.2 s |
+| `sequence_forward` | L2 at 0.2–0.3 s, L5 at 0.3–0.4 s, L8 at 0.4–0.5 s |
+| `sequence_reverse` | L8, L5, L2 at the same successive intervals |
+
+These groups identify receiving-PB annotations of the stimulated PFNd neurons,
+not contact locations or calibrated heading angles. All matching neurons are
+included; actual body IDs are recorded in `stimuli.json`. In the reviewed source,
+each selected group contains two neurons, so the forward/reverse sequences have
+equal injected drive. Input events are active on `[start, stop)` and overlapping
+events add. The final drive row describes the terminal instant, not another
+integration interval.
+
+The default groups select only left-PB neurons, whereas the earlier column
+connectivity heatmaps pool both PB sides within each PFNd FB column. Their target
+rankings can therefore differ (for example, the stimulated L5/C4 subset favors
+hDeltaB C11 over C12). Sequential responses also overlap in time; a bright target
+at a given instant can reflect an earlier stimulus.
+
+Configure parameters with `--tau`, `--dt`, `--gain` and `--duration`. Times are in
+seconds; duration and event boundaries must lie on the timestep grid. The solver
+requires `dt <= tau/20`. Custom stimuli can replace the default experiments:
+
+```json
+{
+  "experiments": [
+    {
+      "name": "custom_pulse",
+      "events": [
+        {"body_ids": [26913], "start_s": 0.2, "stop_s": 0.3,
+         "amplitude": 1.0, "label": "reference PFNd"}
+      ]
+    }
+  ]
+}
+```
+
+Pass that file with `--stimuli path/to/stimuli.json`. Body IDs must belong to the
+saved PFNd population; amplitudes must be nonnegative. An empty event list gives
+an unstimulated control. The complete normalized stimulus specification is saved.
+
+Every experiment is compared against an independent continuous-time solution for
+this equal-time-constant feedforward model. A step produces the first-stage
+response `1 - exp(-t/tau)` and second-stage response
+`1 - (1 + t/tau) exp(-t/tau)`; finite pulses subtract shifted step responses.
+Maximum absolute error is divided by the peak activity of the corresponding
+population block (using a `1e-12` floor for zero responses). Both analytical and
+half-timestep discrepancies must be at most 2%, and half-timestep analytical error
+must not increase. Exact deterministic replay is also checked. These validate
+the implementation of the stated equations, not a biological computation.
+
+A sensitivity table varies tau by factors of 0.5 and 2 and gain by factors of 0.5
+and 2, changing one parameter at a time. All sensitivity runs use half the main
+timestep, including their baseline case. They test dependence on illustrative
+parameters; they do not fit physiology. In this positive, unsaturated feedforward
+model, doubling gain is expected to double hDeltaB activity without changing PFNd
+activity or the hDeltaB response shape.
+
+| Output | Contents |
+| --- | --- |
+| `model_config.json`, `stimuli.json` | Parameters, equations, assumptions, omitted dynamics and exact stimulus events |
+| `raw_contact_matrix.csv`, `effective_weight_matrix.csv` | Original counts and scaled weights; source rows, target columns |
+| `*_neurons.csv`, `*_anatomical_order.csv` | Population annotations and plotting orders |
+| `experiments/*/drive.csv` | Time in seconds and external drive for every PFNd neuron |
+| `experiments/*/activity.csv` | Time and activity of all 59 neurons; column names include population and body ID |
+| `experiment_summary.csv`, `neuron_summary.csv` | Peak/final activities, timing and per-neuron activity areas |
+| `numerical_validation.csv` | Analytical error, timestep comparison and replay checks for each population/experiment |
+| `parameter_sensitivity.csv` | Response summaries under one-at-a-time tau/gain changes |
+| `*.png`, `*.pdf` | Stimuli, mean traces, anatomical activity heatmaps and per-neuron peak comparisons |
+| `rate_model.json` | Completion status, source metadata/hashes, code/package versions, validation and artifact hashes |
+
+Peak times are undefined for zero responses. Activity area is a numerical summary
+of a trace, **not** an implemented displacement integrator or stored memory.
+Delayed peaks and decaying activity after stimulation are expected from the two
+successive response filters. No movement inputs, angle decoder, path integration,
+steering or plasticity are implemented in this milestone.
+
+Only `status: complete` denotes a successful simulation, validation and plotting
+run. Numerical failures preserve traces and validation diagnostics. Source files
+are hashed before/after computation and saved model data is hashed before/after
+plotting. A dirty Git revision is accompanied by package source hashes.
+
+Replot saved validated traces without re-running the experiments:
+
+```bash
+python -m fly_connectome simulate-plot results/pfnd-hdeltab-rate-v1.0 \
+  --output results/pfnd-hdeltab-rate-replot-v1.0
+```
+
+The command verifies relative data paths/hashes inside the supplied run directory,
+supports moved/copied runs, and writes to a new directory. If rendering failed
+after data validation, `data_validated: true` permits recovering the plots.
+
 ## Tests
 
 ```bash

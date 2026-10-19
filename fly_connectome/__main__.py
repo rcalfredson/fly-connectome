@@ -26,6 +26,7 @@ from .columns import column_analysis
 from .spatial import run_pilot, plot_pilot
 from .spatial_population import run_population, render_population, verify_run_data
 from .inputs import run_inputs, replot_inputs
+from .rate_model import Parameters, run_rate_model, replot_rate_model
 
 
 def save_json(path, value):
@@ -168,10 +169,29 @@ def main(argv=None):
     inputs_plot.add_argument("--output", type=Path, required=True, help="New plot directory")
     inputs_plot.add_argument("--show-fraction-caveat", action="store_true",
                              help="Show the anatomical-counts footer on the population fraction heatmap")
+    simulation = commands.add_parser("simulate", help="Run offline PFNd -> hDeltaB feedforward rate experiments")
+    simulation.add_argument("source", type=Path, help="Complete saved baseline connectivity extraction")
+    simulation.add_argument("--output", type=Path, required=True, help="New simulation output directory")
+    simulation.add_argument("--tau", type=float, default=.1, help="Shared illustrative time constant, seconds (default: 0.1)")
+    simulation.add_argument("--dt", type=float, default=.001, help="Euler timestep, seconds (default: 0.001)")
+    simulation.add_argument("--gain", type=float, default=.001, help="Excitatory coupling per contact (default: 0.001)")
+    simulation.add_argument("--duration", type=float, default=3., help="Experiment duration, seconds (default: 3)")
+    simulation.add_argument("--stimuli", type=Path, help="Custom stimulus JSON; otherwise run six default experiments")
+    simulation_plot = commands.add_parser("simulate-plot", help="Replot validated rate-model traces offline")
+    simulation_plot.add_argument("source", type=Path, help="Validated simulation output directory")
+    simulation_plot.add_argument("--output", type=Path, required=True, help="New plot directory")
     args = parser.parse_args(argv)
     try:
         if args.command == "extract":
             extract(args.output)
+        elif args.command == "simulate":
+            parameters = Parameters(tau_s=args.tau, dt_s=args.dt, gain=args.gain, duration_s=args.duration)
+            result = run_rate_model(args.source, args.output, code_revision(), parameters, args.stimuli)
+            print(f"Saved rate-model experiments to {args.output}")
+            print(result["validation"])
+        elif args.command == "simulate-plot":
+            replot_rate_model(args.source, args.output, code_revision())
+            print(f"Saved rate-model plots to {args.output}")
         elif args.command == "inputs-plot":
             replot_inputs(args.source, args.output, code_revision(),
                           show_fraction_caveat=args.show_fraction_caveat)
