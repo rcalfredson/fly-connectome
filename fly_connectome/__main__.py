@@ -25,6 +25,7 @@ from .anatomy import anatomical_heatmaps
 from .columns import column_analysis
 from .spatial import run_pilot, plot_pilot
 from .spatial_population import run_population, render_population, verify_run_data
+from .inputs import run_inputs, replot_inputs
 
 
 def save_json(path, value):
@@ -157,22 +158,39 @@ def main(argv=None):
     spatial_all_plot = commands.add_parser("spatial-all-plot", help="Replot population spatial data offline")
     spatial_all_plot.add_argument("source", type=Path, help="Population spatial extraction directory")
     spatial_all_plot.add_argument("--output", type=Path, required=True, help="New plot directory")
+    inputs = commands.add_parser("inputs", help="Census all direct Segment inputs to the saved PFNd population")
+    inputs.add_argument("source", type=Path, help="Complete baseline extraction directory")
+    inputs.add_argument("--output", type=Path, required=True, help="New census output directory")
+    inputs.add_argument("--show-fraction-caveat", action="store_true",
+                        help="Show the anatomical-counts footer on the population fraction heatmap")
+    inputs_plot = commands.add_parser("inputs-plot", help="Plot validated saved PFNd input census tables offline")
+    inputs_plot.add_argument("source", type=Path, help="Validated input census directory")
+    inputs_plot.add_argument("--output", type=Path, required=True, help="New plot directory")
+    inputs_plot.add_argument("--show-fraction-caveat", action="store_true",
+                             help="Show the anatomical-counts footer on the population fraction heatmap")
     args = parser.parse_args(argv)
     try:
         if args.command == "extract":
             extract(args.output)
-        elif args.command in ("spatial", "spatial-all"):
+        elif args.command == "inputs-plot":
+            replot_inputs(args.source, args.output, code_revision(),
+                          show_fraction_caveat=args.show_fraction_caveat)
+            print(f"Saved PFNd input plots to {args.output}")
+        elif args.command in ("spatial", "spatial-all", "inputs"):
             load_dotenv(Path.cwd() / ".env", override=False)
             token = os.environ.get("NEUPRINT_TOKEN", "").strip()
             if not token:
                 raise ValidationError("Set NEUPRINT_TOKEN in the environment or the local .env file.")
             client = Client(SERVER, dataset=DATASET, token=token)
             client.progress = False
-            if args.command == "spatial-all":
+            if args.command == "inputs":
+                result = run_inputs(client, args.source, args.output, code_revision(),
+                                    show_fraction_caveat=args.show_fraction_caveat)
+            elif args.command == "spatial-all":
                 result = run_population(client, args.source, args.output, code_revision(), args.cache)
             else:
                 result = run_pilot(client, args.source, args.output, code_revision())
-            print(f"Saved spatial analysis to {args.output}")
+            print(f"Saved {'PFNd input census' if args.command == 'inputs' else 'spatial analysis'} to {args.output}")
             print(result["validation"])
         elif args.command == "spatial-all-plot":
             metadata = json.loads((args.source / "spatial_population.json").read_text())

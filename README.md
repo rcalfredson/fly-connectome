@@ -381,6 +381,102 @@ are recorded before rendering, so this command can also recover figures after a
 rendering failure without repeating server queries. It records a separate
 `replot.json`; it does not change the original extraction manifest.
 
+## Direct upstream inputs to PFNd
+
+Extract a one-hop input census into a **new** directory, using the saved PFNd
+population as the membership/instance baseline:
+
+```bash
+python -m fly_connectome inputs results/pfnd-hdeltab-v1.0 \
+  --output results/pfnd-inputs-v1.0
+```
+
+This uses the same local `.env` authentication as `extract`. It checks the live
+exact-type PFNd membership and instances against the baseline, related type
+annotations, and the reference `26913 → 515192 = 137`. The existing results are
+read only. No PFNv expansion, coordinates, skeletons or simulation are fetched.
+
+The upstream query starts with the selected PFNd targets and traverses incoming
+`ConnectsTo` edges from **all `Segment` nodes**, retaining standard `weight >= 1`.
+There are no source-type, reconstruction-status, cropping, ROI or hemisphere
+filters. Recurrent connections and any self-connections are included. The custom
+query is saved verbatim in the manifest. The existing `fetch_connections` helper
+requires explicit IDs; the API's `sources=None` default uses `Neuron` criteria
+and would omit non-neuron segments.
+
+**Share** is a population's total weight divided by all incoming segment weights
+across the complete selected PFNd population. **Coverage** is the number of PFNd
+neurons receiving positive input from that population divided by the complete
+target count. **Input fraction** uses each target's own incoming segment weight
+as denominator. Per-target weight distributions and coverage retain zeros;
+fractions with zero denominators are undefined and saved as blank cells. Counts
+are not estimates of physiological efficacy, and missing connections do not
+establish biological absence.
+
+Annotation categories and flagged statuses remain explicit. `untyped_weight`
+and `flagged_weight` overlap other category totals; do not add them to those
+totals. Flagged status/statusLabel values are `Glia`, `Orphan` and `Unimportant`.
+All missing reconstruction values are reported as unknown, not as evidence of
+complete reconstruction. These flags do not exclude edges from the baseline.
+
+**Receiving-neuron anatomy and contact location are distinct.** Each PFNd retains
+its PB side, PB glomerulus and FB column annotation. Grouping input to a neuron
+with FB annotation C8 does not place that input in FB C8: the contact can be in
+NO, PB or another region. Anatomical groups are joint `(PB side, PB glomerulus,
+FB column)` groups. Raw totals, per-target means and input fractions accompany
+the unequal group sizes. No physical column boundaries, common spatial coordinate
+or functional-angle mapping are inferred.
+
+ROI counts use the **postsynaptic endpoint** count in each edge's `roiInfo`.
+Primary ROI rows are additive. Parent/child and other nonprimary ROI rows are
+retained for inspection but overlap and must not be added into totals. Positive
+weight outside primary ROIs becomes an explicit `NotPrimary` residual. Unknown
+or unspecified *named primary* regions retain their dataset names. Malformed ROI
+data, overlapping primary counts, duplicate pairs, invalid weights or changed
+target annotations stop the run. Completion also requires exact reconciliation
+of each PFNd neuron's recorded `post` count with its incoming segment weights;
+diagnostic residuals remain saved if that check fails. This reconciles database
+counts, not biological completeness.
+
+| Output | Contents |
+| --- | --- |
+| `raw_connections.csv` | Raw query response, including source annotations, labels and edge ROI JSON |
+| `PFNd_neurons.csv`, `PFNd_anatomical_order.csv` | Live targets, recorded post counts, reconstruction annotations and parsed anatomy |
+| `upstream_neurons.csv` | One row per connected source body, original/cross-dataset annotations, category and status flag |
+| `incoming_connections.csv` | Positive body pairs, standard weight and original ROI JSON |
+| `connection_roi_counts.csv` | Positive pair/ROI post counts; `additive` distinguishes primary/residual rows from overlapping rows |
+| `input_denominators.csv` | Every target's total input, category totals, untyped/flagged totals and post-minus-edge residual |
+| `population_inputs.csv` | All populations, total share, coverage and zero-inclusive per-target distributions |
+| `population_by_target.csv` | Complete population × PFNd target table, including zeros, denominators, fractions and target anatomy |
+| `anatomical_group_inputs.csv` | Joint anatomical groups, target counts, total/per-target weight and fractions |
+| `population_roi_inputs.csv`, `anatomical_roi_inputs.csv` | Sparse positive population/ROI and anatomical-group/ROI counts |
+| `reconstruction_summary.csv` | Source-body counts and edge weights by category and reconstruction field |
+| `type_inventory.csv`, `reference_*.csv` | Live type inventory and reference validation inputs |
+| `population_totals`, `population_fractions`, `input_distributions`, `input_regions` (`.png`, `.pdf`) | Leading 20 populations; selection affects plots only |
+| `inputs.json` | Status, UTC times, dataset/baseline metadata, exact query, definitions, reference and conservation checks, code/package versions and hashes |
+
+Only `status: complete` denotes a successful extraction and rendering run. Failed
+runs preserve available diagnostics and never turn query errors into zeros.
+The manifest includes source-file hashes as well as the Git revision/dirty flag;
+preserve local code changes alongside runs made from a dirty checkout.
+
+Replot validated saved data without a token or network:
+
+```bash
+python -m fly_connectome inputs-plot results/pfnd-inputs-v1.0 \
+  --output results/pfnd-inputs-replot-v1.0
+```
+
+This verifies all recorded data hashes before and after plotting, resolves data
+paths inside the supplied run directory, and refuses existing output directories.
+It can also recover plots after a rendering failure when the manifest already
+records `data_validated: true`. It writes only plots and `replot.json` to the new
+directory; the source data remains unchanged.
+
+The population fraction heatmap hides the footer beginning "Anatomical counts"
+by default. Add `--show-fraction-caveat` to `inputs` or `inputs-plot` to display it.
+The caveat remains in the census metadata regardless of this plot setting.
+
 ## Tests
 
 ```bash
