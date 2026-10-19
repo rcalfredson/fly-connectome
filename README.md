@@ -619,6 +619,110 @@ The command verifies relative data paths/hashes inside the supplied run director
 supports moved/copied runs, and writes to a new directory. If rendering failed
 after data validation, `data_validated: true` permits recovering the plots.
 
+## Subcritical PFNd recurrence experiments
+
+Repeat the **exact saved feedforward stimulus protocol** with PFNd recurrence:
+
+```bash
+python -m fly_connectome simulate-recurrent results/pfnd-hdeltab-rate-v1.0 \
+  --census results/pfnd-inputs-v1.0 \
+  --output results/pfnd-hdeltab-recurrent-v1.0
+```
+
+This is offline and requires complete, hash-validated feedforward and census
+runs. Target body IDs, types and instances, dataset UUID and recorded edit/mutation
+metadata must agree. The recurrent matrix comes from all census edges whose
+source and target belong to the saved PFNd population, including every positive
+weight and all receiving regions. In the reviewed data this is **847 pairs and
+8,109 contacts**, with zero reported self-contacts. No diagonal connections are
+invented and no inputs are excluded based on region or reconstruction status.
+
+The model adds `PFNd @ R` to PFNd input, where
+`R[pre, post] = recurrent_gain × recurrent_contact_count`. Both forward and
+recurrent coupling are assumed excitatory. Recurrent gain is independent of the
+forward gain, and no per-neuron normalization is imposed. The shared time
+constant, timestep, duration, external stimuli, baseline, initial activity,
+feedforward weights and no-noise setting are taken from the feedforward run.
+Each neuron still has one activity value pooling its regional inputs. There is
+no added saturation, explicit transmission delay, hDeltaB feedback or recurrence.
+
+The default gain sweep is `0, 0.0005, 0.001, 0.002`; override it with
+`--recurrent-gains`, including zero as a required control. The zero-gain traces
+must reproduce the saved feedforward traces to CSV round-trip precision
+(`rtol=1e-12`, `atol=1e-14`). The solver is separately tested for bitwise equality
+between zero recurrent coupling and its original feedforward code path.
+
+All gains are checked **before** the output directory is created. For these
+nonnegative couplings, the recurrent feedback spectral radius must be below 1;
+the Euler update's spectral radius must also be below 1. The raw matrix's spectral
+radius is approximately `219.725`, giving a critical gain of approximately
+`0.00455115` per contact. Gains at or above the stability boundary are refused.
+The slowest PFNd network mode has predicted time constant
+`tau / (1 - recurrent_gain * raw_spectral_radius)`, distinct from the unchanged
+intrinsic neuron time constant. These checks constrain this provisional model,
+not biological coupling strength.
+
+Every condition is checked against a continuous-time matrix-exponential reference
+for the piecewise-constant stimulus. Because inputs, activity and weights are
+nonnegative, ReLU is the identity on the trajectories, so this linear reference
+applies. It uses a scaling/squaring Taylor calculation implemented with NumPy,
+independent of Euler stepping. The zero-gain reference is also checked against
+the original closed-form feedforward solution. Analytical and half-timestep
+errors must each be at most 2% of the population block's peak, half-timestep
+analytical error must not increase, and deterministic replay must match exactly.
+
+Comparison metrics have operational definitions saved in the manifest:
+
+- **Recruitment:** PFNd neurons never externally stimulated during the trial
+  whose peak activity exceeds `0.001 a.u.`. This is not a physiological firing
+  threshold; individual peak values remain saved for alternative thresholds.
+- **Decay:** time after the last stimulus offset until the largest activity in
+  a population remains at or below 1% of that population's whole-trial peak.
+  Unobserved crossings and zero-response cases are blank, not proof of memory.
+- **Amplification:** population maximum single-neuron activity divided by its
+  corresponding feedforward maximum; undefined when the reference is zero.
+- **Pattern change:** cosine similarity between vectors of per-neuron temporal
+  hDeltaB maxima and the feedforward maxima. These peaks need not be simultaneous
+  and do not encode a calibrated heading or travel angle.
+
+The new directory contains `raw_recurrent_matrix.csv`, `stability.csv`,
+`comparison_summary.csv`, `neuron_comparison.csv`, `numerical_validation.csv`,
+`stimuli.json` and `recurrent_model.json`. Each `gain_*` directory contains its
+own configuration, raw/effective forward and recurrent matrices, per-experiment
+drive/activity CSVs, validation tables, plots and `rate_model.json`. Root-level
+`*_comparison.{png,pdf}` plots overlay the gain conditions for each experiment;
+`recurrence_summary.{png,pdf}` compares amplification, recruitment and decay.
+Only `status: complete` denotes a successful whole sweep. All source artifacts
+and manifests are checked again at the end; existing runs are preserved.
+
+Replot the cross-gain comparisons from saved traces:
+
+```bash
+python -m fly_connectome simulate-recurrent-plot results/pfnd-hdeltab-recurrent-v1.0 \
+  --output results/pfnd-hdeltab-recurrent-replot-v1.0
+```
+
+Individual gain conditions support `simulate-plot` as well. Both replot paths
+verify data hashes and support relocated runs. Increased transient persistence
+in this stable network should not be interpreted as a displacement integrator
+or home-vector memory.
+
+For figures containing only the two time-dependent activity heatmaps (PFNd and
+hDeltaB), add `--heatmaps-only` to either replot command:
+
+```bash
+python -m fly_connectome simulate-plot results/pfnd-hdeltab-rate-v1.0 \
+  --heatmaps-only --output results/pfnd-hdeltab-rate-heatmaps-v1.0
+python -m fly_connectome simulate-recurrent-plot results/pfnd-hdeltab-recurrent-v1.0 \
+  --heatmaps-only --output results/pfnd-hdeltab-recurrent-heatmaps-v1.0
+```
+
+This omits the stimulus and population-mean subplots and the separate peak-profile
+summary. It retains neuron labels, time axes and the original per-panel activity
+scales. The recurrent command produces one set per `gain_*` condition. These
+commands read saved traces, create new PNG/PDF copies, and do not rerun or modify
+the simulations. The selected format is recorded in `replot.json`.
+
 ## Tests
 
 ```bash

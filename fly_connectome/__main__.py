@@ -27,6 +27,7 @@ from .spatial import run_pilot, plot_pilot
 from .spatial_population import run_population, render_population, verify_run_data
 from .inputs import run_inputs, replot_inputs
 from .rate_model import Parameters, run_rate_model, replot_rate_model
+from .recurrent_model import run_recurrent_model, replot_recurrent_model
 
 
 def save_json(path, value):
@@ -180,17 +181,37 @@ def main(argv=None):
     simulation_plot = commands.add_parser("simulate-plot", help="Replot validated rate-model traces offline")
     simulation_plot.add_argument("source", type=Path, help="Validated simulation output directory")
     simulation_plot.add_argument("--output", type=Path, required=True, help="New plot directory")
+    simulation_plot.add_argument("--heatmaps-only", action="store_true",
+                                 help="Plot only PFNd and hDeltaB activity heatmaps, omitting stimulus/mean traces and peak summary")
+    recurrent = commands.add_parser("simulate-recurrent", help="Repeat saved stimuli with subcritical PFNd recurrence")
+    recurrent.add_argument("source", type=Path, help="Complete feedforward simulation run")
+    recurrent.add_argument("--census", type=Path, required=True, help="Complete upstream PFNd input census")
+    recurrent.add_argument("--output", type=Path, required=True, help="New recurrent sweep directory")
+    recurrent.add_argument("--recurrent-gains", type=float, nargs="+", default=[0., .0005, .001, .002],
+                           help="Recurrent gains per contact, including zero (default: 0 0.0005 0.001 0.002)")
+    recurrent_plot = commands.add_parser("simulate-recurrent-plot", help="Replot recurrent gain comparisons offline")
+    recurrent_plot.add_argument("source", type=Path, help="Validated recurrent sweep")
+    recurrent_plot.add_argument("--output", type=Path, required=True, help="New plot directory")
+    recurrent_plot.add_argument("--heatmaps-only", action="store_true",
+                               help="Plot only activity heatmaps for every experiment in each recurrent gain condition")
     args = parser.parse_args(argv)
     try:
         if args.command == "extract":
             extract(args.output)
+        elif args.command == "simulate-recurrent":
+            result = run_recurrent_model(args.source, args.census, args.output, code_revision(), args.recurrent_gains)
+            print(f"Saved recurrent rate-model experiments to {args.output}")
+            print(result["validation"])
+        elif args.command == "simulate-recurrent-plot":
+            replot_recurrent_model(args.source, args.output, code_revision(), heatmaps_only=args.heatmaps_only)
+            print(f"Saved recurrent plots to {args.output}")
         elif args.command == "simulate":
             parameters = Parameters(tau_s=args.tau, dt_s=args.dt, gain=args.gain, duration_s=args.duration)
             result = run_rate_model(args.source, args.output, code_revision(), parameters, args.stimuli)
             print(f"Saved rate-model experiments to {args.output}")
             print(result["validation"])
         elif args.command == "simulate-plot":
-            replot_rate_model(args.source, args.output, code_revision())
+            replot_rate_model(args.source, args.output, code_revision(), heatmaps_only=args.heatmaps_only)
             print(f"Saved rate-model plots to {args.output}")
         elif args.command == "inputs-plot":
             replot_inputs(args.source, args.output, code_revision(),
