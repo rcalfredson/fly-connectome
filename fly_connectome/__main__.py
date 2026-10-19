@@ -23,6 +23,8 @@ from .connectivity import (
 from .plotting import load_matrix, plot_heatmap
 from .anatomy import anatomical_heatmaps
 from .columns import column_analysis
+from .spatial import run_pilot, plot_pilot
+from .spatial_population import run_population, render_population, verify_run_data
 
 
 def save_json(path, value):
@@ -142,10 +144,54 @@ def main(argv=None):
     columns.add_argument("--output", type=Path, required=True, help="New directory for column summaries")
     columns.add_argument("--show-column-caveat", action="store_true",
                          help="Show the annotation caveat above column heatmaps (hidden by default)")
+    spatial = commands.add_parser("spatial", help="Fetch the seven-neuron FB spatial pilot and plot")
+    spatial.add_argument("source", type=Path, help="Complete saved extraction directory")
+    spatial.add_argument("--output", type=Path, required=True, help="New output directory")
+    spatial_plot = commands.add_parser("spatial-plot", help="Replot a completed spatial pilot offline")
+    spatial_plot.add_argument("source", type=Path, help="Complete spatial pilot directory")
+    spatial_plot.add_argument("--output", type=Path, required=True, help="New plot directory")
+    spatial_all = commands.add_parser("spatial-all", help="Map all connected PFNd -> hDeltaB column combinations")
+    spatial_all.add_argument("source", type=Path, help="Complete saved connectivity extraction")
+    spatial_all.add_argument("--output", type=Path, required=True, help="New output directory")
+    spatial_all.add_argument("--cache", type=Path, help="Completed spatial pilot to reuse after hash/metadata checks")
+    spatial_all_plot = commands.add_parser("spatial-all-plot", help="Replot population spatial data offline")
+    spatial_all_plot.add_argument("source", type=Path, help="Population spatial extraction directory")
+    spatial_all_plot.add_argument("--output", type=Path, required=True, help="New plot directory")
     args = parser.parse_args(argv)
     try:
         if args.command == "extract":
             extract(args.output)
+        elif args.command in ("spatial", "spatial-all"):
+            load_dotenv(Path.cwd() / ".env", override=False)
+            token = os.environ.get("NEUPRINT_TOKEN", "").strip()
+            if not token:
+                raise ValidationError("Set NEUPRINT_TOKEN in the environment or the local .env file.")
+            client = Client(SERVER, dataset=DATASET, token=token)
+            client.progress = False
+            if args.command == "spatial-all":
+                result = run_population(client, args.source, args.output, code_revision(), args.cache)
+            else:
+                result = run_pilot(client, args.source, args.output, code_revision())
+            print(f"Saved spatial analysis to {args.output}")
+            print(result["validation"])
+        elif args.command == "spatial-all-plot":
+            metadata = json.loads((args.source / "spatial_population.json").read_text())
+            data_hashes = verify_run_data(args.source, metadata)
+            args.output.mkdir(parents=True, exist_ok=False)
+            render_population(args.source, args.output)
+            verify_run_data(args.source, metadata)
+            save_json(args.output / "replot.json", {
+                "status": "complete", "source": str(args.source.resolve()),
+                "data_sha256": data_hashes, "code": code_revision(),
+            })
+            print(f"Saved population spatial plots to {args.output}")
+        elif args.command == "spatial-plot":
+            metadata = json.loads((args.source / "spatial_pilot.json").read_text())
+            if metadata.get("status") != "complete":
+                raise ValidationError("Replotting requires a complete spatial pilot.")
+            args.output.mkdir(parents=True, exist_ok=False)
+            plot_pilot(args.source, args.output)
+            print(f"Saved spatial plots to {args.output}")
         elif args.command == "anatomical":
             result = anatomical_heatmaps(args.source, args.output)
             print(f"Saved anatomical tables and heatmaps to {args.output}")

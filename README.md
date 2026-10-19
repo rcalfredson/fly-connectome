@@ -186,8 +186,8 @@ Ordering uses annotations alone, without connectivity clustering, normalization,
 or aggregation. This independence describes the implementation; the original
 curation's independence from connectivity evidence remains unverified. Generic
 body-ID permutations and body-ID-keyed plot labels/groups can also support future
-morphology-derived orders without modifying extraction. Morphology analysis is
-not implemented here.
+morphology-derived orders without modifying extraction. The anatomical-ordering
+command does not use morphology; the spatial pilot below inspects it separately.
 
 ## PFNd → hDeltaB column aggregation
 
@@ -236,6 +236,150 @@ pairs, and connected pairs. SHA-256 hashes of CSV/JSON inputs in both source
 directories (including both original matrices and ordering tables) are checked
 again after output generation. Only a manifest with `status: complete` denotes
 success; existing source artifacts are preserved.
+
+## FB spatial pilot
+
+Retrieve a bounded sample of **seven neurons and five directed pairs** from a
+complete saved extraction:
+
+```bash
+python -m fly_connectome spatial results/pfnd-hdeltab-v1.0 \
+  --output results/pfnd-hdeltab-spatial-pilot-v1.0
+```
+
+Pairs are `26913 → 515192`, `77360 → 515192`, `26913 → 27109`,
+`26913 → 513702`, and `25982 → 11512`. The command checks live type/instance
+annotations against saved populations and each full contact count against the
+saved forward matrix. It fetches FB-restricted pre/post points with explicit
+`FBl1`–`FBl9` flags, all-ROI contacts for each pair, individual unhealed skeletons,
+and FB/FBl3/FBl4 visualization meshes. It does not fetch other connectivity or
+the full connectome. Use a new output directory; failed runs retain diagnostics.
+
+The reference must have **137 total contacts, 135 FB-post contacts, and 133 with
+both endpoints in FB**. These are different scopes, not inconsistent counts.
+Standard confidence uses `postHighAccuracyThreshold=0.5` with the pinned client's
+strict `>` comparison on both contact endpoints; `weightHP` is not used. Changed
+thresholds or reference ROI counts stop the pilot for review. Individual FB/layer
+point counts are compared with neuron ROI statistics, and every FB contact
+endpoint must be present in the corresponding neuron's point table.
+
+`pre`/`post` denotes a synapse's polarity; `compartment` denotes the dataset's
+axon/dendrite/linker assignment. Axonal arbors can receive postsynaptic input.
+Labels are provisional anatomical assignments, not functional ground truth.
+Explicit layer flags come from a body-restricted custom query to avoid losing
+overlapping ROI labels in the installed client's individual-synapse row assembly.
+
+Outputs include:
+
+| File | Contents |
+| --- | --- |
+| `neurons.csv`, `live_annotations.csv` | Parsed saved column annotations and live reconstruction annotations |
+| `neuron_roi_counts.csv` | Live per-neuron ROI counts used for validation |
+| `fb_synapses.csv` | Unique FB sites: raw XYZ, polarity, confidence, compartment, split property and nine layer flags |
+| `contacts.csv` | All five pairs' contacts, both endpoints, ROI lists encoded as JSON, FB/layer flags and compartment labels |
+| `pair_counts.csv` | Total, FB-post and both-FB counts; unique sites counted separately from contacts |
+| `arbor_spatial_summary.csv` | Per-body/polarity/compartment/ROI counts, XYZ mean/median, population SD, range and 10th/90th percentiles in µm |
+| `skeletons/*.csv`, `meshes/*.obj` | Unhealed centerlines and visualization geometry |
+| `pair_*.{png,pdf}` | Common-scale XY/XZ/YZ projections and a 3D view for each pair |
+| `spatial_pilot.json` | Completion status, metadata, units, query settings, checks, code/package versions and source/artifact SHA-256 hashes |
+
+Raw coordinates are native MaleCNS EM voxels (8 nm isotropic); summaries and
+plots multiply by `0.008` to report micrometers. Axis labels remain native XYZ;
+anatomical axis orientation is unverified. The plots show FB points, arbor labels,
+pair post endpoints, and skeletons clipped to the view box. A clipped skeleton
+segment is not necessarily inside the FB ROI. ROI meshes are visual context only,
+never used for quantitative containment or distances. FB/layer summary rows
+overlap: do not sum parent and child rows. No shared column coordinate, angular
+conversion, or hDeltaB indexing-arbor conclusion is inferred automatically.
+
+Replot a completed pilot offline into a new directory:
+
+```bash
+python -m fly_connectome spatial-plot results/pfnd-hdeltab-spatial-pilot-v1.0 \
+  --output results/pfnd-hdeltab-spatial-replot-v1.0
+```
+
+Only `status: complete` in the spatial manifest denotes a successful extraction,
+validation and plotting run. A dirty Git flag means the commit alone does not
+capture the implementation; the manifest also records hashes of package source
+files. Preserve local code changes along with the run.
+
+## All connected FB column combinations
+
+Expand the spatial pilot to every reported PFNd → hDeltaB connection in the saved
+population matrix, including weight-one pairs:
+
+```bash
+python -m fly_connectome spatial-all results/pfnd-hdeltab-v1.0 \
+  --cache results/pfnd-hdeltab-spatial-pilot-v1.0 \
+  --output results/pfnd-hdeltab-spatial-columns-v1.0
+```
+
+The current saved matrix has **432 positive neuron pairs, 20,165 contacts and
+68 connected column combinations out of 96**. All their contact coordinates are
+retrieved; no representative selection limits extraction. This remains restricted
+to PFNd and hDeltaB, rather than the complete connectome. A completed pilot can
+optionally supply cached FB sites, skeletons and meshes after artifact hashes and
+dataset metadata match. Omit `--cache` to fetch everything fresh.
+
+The command validates all positive pairs and exact weights against the saved
+matrix, checks FB/layer site counts and FB contact endpoints, and preserves the
+reference's 137/135/133 scope checks. New or missing live connections stop the run.
+The complete saved populations remain in the queries and coverage tables,
+including neurons with no saved positive connection. These neurons contribute to
+possible-pair counts, and newly reported connections involving them are checked.
+Neurons with no FB synapse sites remain in the population tables and skeleton
+outputs but have no FB synapse centroid.
+Existing outputs are refused. Input and output hashes and metadata are recorded
+in `spatial_population.json`; only `status: complete` means the whole run passed.
+
+Open **`index.html`** in the output directory for an 8 × 12 visual index:
+
+- `columns/C#_C#.{png,pdf}` pools **all contacts** from all connected neuron pairs
+  in each positive annotated column combination, with both populations' synapse
+  sites for anatomical context.
+- `pairs/pair_#_#.{png,pdf}` provides a detailed skeleton/3D view of the strongest
+  whole-connection pair per positive column combination. Ties use ascending body
+  IDs. These 68 examples are explicitly representatives, not all 432 body pairs.
+- `atlas/PFNd_C#.{png,pdf}` shows all twelve target column positions for each
+  source column in common-scale XZ panels. Contact points are coloured by their
+  receiving hDeltaB compartment; faint points show hDeltaB FB input sites.
+- `column_locations.{png,pdf}` shows per-neuron centroids for PFNd output sites,
+  hDeltaB dendritic input sites, and hDeltaB axonal output sites. These landmarks
+  use sites across all partners, independent of PFNd → hDeltaB contact selection.
+  `column_landmarks.csv` stores the plotted centroids; PFNd pools all FB output
+  sites into one centroid per neuron, including outputs on dendritic compartments.
+- `column_coverage.csv` retains all 96 cells, with neuron/pair counts, contact
+  scopes, FB-post compartment counts and representative IDs. Zero cells mean
+  no connection was reported in the saved matrix, not biological absence.
+- `contact_arbor_summary.csv` reports contact counts and receiving positions by
+  neuron pair, annotated column pair, compartment and total/FB-post scope.
+- The pilot's point tables, neuron/arbor summaries, ROI counts, individual
+  skeletons and visualization meshes are also retained for the full population.
+
+Multiple target column labels do not by themselves establish that annotations are
+unrelated to contact locations: spatially displaced arbors from differently labelled
+neurons can overlap. These figures help compare contacts with the locations of
+each labelled arbor. They do not infer an indexing rule based on a shaft, assign
+normalized columns or angles, or independently validate compartment labels.
+Synapse centroids summarize sites rather than shafts or anatomical boundaries.
+
+Re-render saved population data without a token or network:
+
+```bash
+python -m fly_connectome spatial-all-plot results/pfnd-hdeltab-spatial-columns-v1.0 \
+  --output results/pfnd-hdeltab-spatial-columns-replot-v1.0
+```
+
+This checks recorded data hashes against files inside the supplied run directory
+and writes to a new directory, including copies of the CSV tables linked by the
+gallery. New data manifests store paths relative to the run directory; legacy
+manifests are mapped to that directory without reading their original paths.
+Copied or relocated runs therefore do not require the original run to exist,
+and modifications to the supplied copy are rejected. Validated data
+are recorded before rendering, so this command can also recover figures after a
+rendering failure without repeating server queries. It records a separate
+`replot.json`; it does not change the original extraction manifest.
 
 ## Tests
 
