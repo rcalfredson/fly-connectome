@@ -723,6 +723,95 @@ scales. The recurrent command produces one set per `gain_*` condition. These
 commands read saved traces, create new PNG/PDF copies, and do not rerun or modify
 the simulations. The selected format is recorded in `replot.json`.
 
+## PFNv expansion and combined feedforward experiments
+
+Add the exact `PFNv` population to the original extraction:
+
+```bash
+python -m fly_connectome expand-pfn results/pfnd-hdeltab-v1.0 \
+  --output results/pfn-hdeltab-v1.0
+python -m fly_connectome columns-pfnv results/pfn-hdeltab-v1.0 \
+  --output results/pfnv-hdeltab-columns-v1.0
+python -m fly_connectome simulate-pfn results/pfn-hdeltab-v1.0 \
+  --output results/pfn-hdeltab-rate-v1.0
+python -m fly_connectome simulate-plot results/pfn-hdeltab-rate-v1.0 \
+  --heatmaps-only --output results/pfn-hdeltab-rate-heatmaps-v1.0
+```
+
+Only `expand-pfn` uses the server and local credential. It checks dataset UUID
+and recorded edit/mutation metadata, exact type inventory, the live PFNd and
+hDeltaB annotations, and every PFNd → hDeltaB weight against the original
+extraction. It saves a new extraction and preserves the baseline. Every positive
+PFNv → hDeltaB connection is included, with no reconstruction, hemisphere, ROI,
+or compartment filters. Full axes retain zero-weight pairs. In the reviewed
+MaleCNS data:
+
+| Source population | Neurons | hDeltaB targets | Positive pairs | Contacts |
+| --- | --- | --- | --- | --- |
+| PFNd | 40 | 19 | 432 | 20,165 |
+| PFNv | 20 | 19 | 126 | 4,344 |
+
+Each source population reaches all 19 target neurons, and every source neuron
+has at least one reported connection. The combined matrix has 60 source rows
+and 19 target columns, ordered by numeric body ID. Separate source annotations
+and matrices, anatomical heatmaps, `PFNv_annotation_mapping.csv`,
+`connectivity_summary.csv`, and data/artifact hashes are saved alongside it.
+The offline loader reconstructs both component matrices from edge tables and
+checks their combined matrix, annotations, and hashes before simulation.
+
+`columns-pfnv` produces the same total-contact and mean-per-possible-pair heatmaps,
+CSV summaries, and partner rankings as the PFNd column analysis, using PFNv
+C1–C9 against hDeltaB C1–C12. Unconnected pairs remain in the mean denominator.
+The annotation caveat is hidden on plots by default; `--show-column-caveat`
+displays it. Each plot uses its own color scale.
+
+PFNv instance annotations have the form `PFNv(PB05)_L2_C1`. The PB side,
+glomerulus, and FB column are parsed literally and ordered by FB column, side,
+then body ID. **The PFNd PB-to-FB formula is not applied to PFNv.** Examples
+include L9/C9 and R2/C9, and different PB glomeruli can share an FB column label.
+`PB05` is part of the instance prefix, not the receiving PB glomerulus. These
+indices have not been calibrated to heading angles or aligned across types.
+
+The combined model uses the same provisional defaults as the initial
+feedforward model: zero baseline and initial activity, no noise, ReLU,
+`tau = 0.1 s`, `dt = 0.001 s`, and `gain = 0.001/contact`. Its equations are:
+
+```text
+tau * d(PFNd)/dt   = -PFNd   + ReLU(I_d)
+tau * d(PFNv)/dt   = -PFNv   + ReLU(I_v)
+tau * d(hDeltaB)/dt = -hDeltaB + ReLU(PFNd @ W_d + PFNv @ W_v)
+```
+
+Both source populations use the same excitatory gain per anatomical contact,
+without population normalization. Counts do not determine their relative
+physiological efficacy. All hDeltaB input compartments are pooled into one rate
+per neuron. Recurrence, cross-population PFN connections, feedback, and explicit
+upstream populations are disabled. The PFNd recurrence command currently accepts
+only PFNd-only feedforward runs, so it cannot silently drop PFNv from this model.
+
+The default protocol contains 12 experiments:
+
+- The original six PFNd experiments, with the same names and events; PFNv is
+  unstimulated and stays silent.
+- PFNv left-PB L2 and right-PB R2 pulses, left-PB L2 sustained stimulation, and
+  left-PB L2/L5/L8 sequences in both orders. Pulse and sequence timing matches
+  the PFNd protocol. These groups are anatomical labels, not movement angles.
+- A simultaneous PFNd L2 + PFNv L2 pulse, which checks summation at hDeltaB.
+
+All events apply amplitude 1 per selected neuron. The inspected PFNd L2/L5/L8
+groups each contain two neurons; PFNv L2/L5/L8 and R2 each contain one. Thus these
+trials are not matched for total injected drive, and the combined trial has
+three stimulated neurons. Group membership and injected drive are saved.
+`--stimuli`, `--tau`, `--dt`, `--gain`, and `--duration` support explicit overrides.
+
+PFNd, PFNv, and hDeltaB have separate activity columns, summaries, numerical
+checks, and heatmaps. Full plots show the external drive, three population means,
+and three heatmaps; `--heatmaps-only` keeps only those three heatmaps. As before,
+the solver is checked against an independent continuous-time solution, half-dt
+integration, and deterministic replay. These experiments validate propagation
+through the expanded feedforward network; movement-dependent input rules and
+functional angle assignments remain the next modeling step.
+
 ## Tests
 
 ```bash

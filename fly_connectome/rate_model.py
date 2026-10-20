@@ -131,7 +131,7 @@ def validate_experiments(spec, source_ids, parameters):
             if (not isinstance(ids, list) or not ids
                     or any(type(body) is not int or body not in source_ids for body in ids)
                     or len(set(ids)) != len(ids)):
-                raise ValidationError("Stimulus body_ids must be unique PFNd integer IDs.")
+                raise ValidationError("Stimulus body_ids must be unique integer IDs from the source population.")
             for field in ["start_s", "stop_s", "amplitude"]:
                 if type(event[field]) not in [int, float] or not np.isfinite(event[field]):
                     raise ValidationError("Stimulus times and amplitudes must be finite numbers.")
@@ -211,32 +211,41 @@ def relative_error(actual, expected):
     return float(np.max(np.abs(actual - expected))) / scale
 
 
-def response_summary(name, times, drive, pre, post, events):
+def response_summary(name, times, drive, pre, post, events, source_groups=None):
     peak = float(post.max())
     mean_post = post.mean(axis=1)
-    return {
+    result = {
         "experiment": name, "stimulated_neurons": int((drive.max(axis=0) > 0).sum()),
         "injected_drive_au_s": sum(len(e["body_ids"]) * e["amplitude"] * (e["stop_s"] - e["start_s"]) for e in events),
-        "PFNd_peak_activity": float(pre.max()), "hDeltaB_peak_activity": peak,
+        "hDeltaB_peak_activity": peak,
         "hDeltaB_peak_population_mean": float(mean_post.max()),
         "hDeltaB_population_peak_time_s": float(times[mean_post.argmax()]) if peak else None,
         "hDeltaB_final_max_activity": float(post[-1].max()),
         "hDeltaB_final_over_peak": float(post[-1].max()) / peak if peak else None,
     }
+    for pop, mask in (source_groups or {"PFNd": np.ones(pre.shape[1], dtype=bool)}).items():
+        result[f"{pop}_peak_activity"] = float(pre[:, mask].max())
+    return result
 
 
 def render_rate_model(source, output, *, heatmaps_only=False):
     source, output = Path(source), Path(output)
     config = json.loads((source / "model_config.json").read_text())
     experiments = json.loads((source / "stimuli.json").read_text())["experiments"]
-    orders = {pop: pd.read_csv(source / f"{pop}_anatomical_order.csv") for pop in ["PFNd", "hDeltaB"]}
+    source_types = config.get("source_populations", ["PFNd"])
+    population_types = [*source_types, "hDeltaB"]
+    source_label = " + ".join(source_types)
+    orders = {pop: pd.read_csv(source / f"{pop}_anatomical_order.csv") for pop in population_types}
     peak_profiles = []
     for experiment in experiments:
         name = experiment["name"]
         activity = pd.read_csv(source / "experiments" / name / "activity.csv")
         times = activity.time_s.to_numpy()
-        ratios = [3, 2] if heatmaps_only else [1, 1, 3, 2]
-        fig, axes = plt.subplots(len(ratios), 1, figsize=(14, 10 if heatmaps_only else 13), sharex=True,
+        ratios = [*[3] * len(source_types), 2]
+        if not heatmaps_only:
+            ratios = [1, 1, *ratios]
+        height = (10 if heatmaps_only else 13) + 3 * (len(source_types) - 1)
+        fig, axes = plt.subplots(len(ratios), 1, figsize=(14, height), sharex=True,
                                  gridspec_kw={"height_ratios": ratios}, constrained_layout=True)
         heatmap_axes = axes if heatmaps_only else axes[2:]
         try:
@@ -248,7 +257,7 @@ def render_rate_model(source, output, *, heatmaps_only=False):
                     axes[0].axvspan(event["start_s"], event["stop_s"], alpha=.12, color="grey")
                     axes[0].text((event["start_s"] + event["stop_s"]) / 2, 1.02, event["label"],
                                  transform=axes[0].get_xaxis_transform(), ha="center", fontsize=8)
-            for pop, ax in zip(["PFNd", "hDeltaB"], heatmap_axes):
+            for pop, ax in zip(population_types, heatmap_axes):
                 order = orders[pop]
                 values = activity[[f"{pop}_{body}" for body in order.bodyId]].to_numpy()
                 if not heatmaps_only:
@@ -268,7 +277,7 @@ def render_rate_model(source, output, *, heatmaps_only=False):
             recurrent_gain = config.get("recurrent_gain", 0.)
             model_name = "recurrent" if recurrent_gain else "feedforward"
             recurrence_label = f"recurrent gain = {recurrent_gain:g}/contact" if recurrent_gain else "no recurrence"
-            fig.suptitle(f"{name} | illustrative PFNd → hDeltaB {model_name} rate model\n"
+            fig.suptitle(f"{name} | illustrative {source_label} → hDeltaB {model_name} rate model\n"
                          f"τ = {config['tau_s']:g} s; forward gain = {config['gain']:g}/contact; {recurrence_label}")
             for ext in ["png", "pdf"]:
                 fig.savefig(output / f"{name}.{ext}", dpi=150)
@@ -311,19 +320,32 @@ def replot_rate_model(source, output, code, *, heatmaps_only=False):
                                       "plot_settings": {"heatmaps_only": heatmaps_only}})
 
 
-def run_rate_model(source, output, code, parameters=None, stimuli=None):
+def run_rate_model(source, output, code, parameters=None, stimuli=None, *, include_pfnv=False):
     parameters = parameters or Parameters()
     parameters.validate()
     source, output = Path(source), Path(output)
-    counts, populations, orders, baseline, source_hashes = load_network(source)
-    spec = default_experiments(orders["PFNd"]) if stimuli is None else json.loads(Path(stimuli).read_text())
+    if include_pfnv:
+        from .pfn import load_pfn_network, pfn_experiments
+        counts, populations, orders, baseline, source_hashes = load_pfn_network(source)
+        default_spec = pfn_experiments(orders) if stimuli is None else None
+    else:
+        counts, populations, orders, baseline, source_hashes = load_network(source)
+        if baseline.get("network_kind") == "pfn_feedforward":
+            raise ValidationError("Use simulate-pfn to include both populations in an expanded extraction.")
+        default_spec = default_experiments(orders["PFNd"]) if stimuli is None else None
+    source_types = ["PFNd", "PFNv"] if include_pfnv else ["PFNd"]
+    source_label = " + ".join(source_types)
+    source_groups = {pop: counts.index.isin(populations[pop].bodyId) for pop in source_types}
+    body_types = {int(body): pop for pop in source_types for body in populations[pop].bodyId}
+    source_columns = [f"{body_types[body]}_{body}" for body in counts.index]
+    spec = default_spec if stimuli is None else json.loads(Path(stimuli).read_text())
     spec = validate_experiments(spec, set(counts.index), parameters)
     output.mkdir(parents=True, exist_ok=False)
     config = {
         **asdict(parameters), "baseline_drive": 0.0, "initial_activity": 0.0,
         "nonlinearity": "ReLU", "noise": "none", "activity_units": "arbitrary normalized rate units; not Hz and not bounded at 1",
         "coupling": "W[pre,post] = gain * raw_contact_count; all included connections assumed excitatory",
-        "weight_axes": "Presynaptic PFNd rows, postsynaptic hDeltaB columns; post input = pre_activity @ W",
+        "weight_axes": f"Presynaptic {source_label} rows, postsynaptic hDeltaB columns; post input = pre_activity @ W",
         "equations": ["tau * d(PFNd)/dt = -PFNd + ReLU(external_drive)",
                       "tau * d(hDeltaB)/dt = -hDeltaB + ReLU(PFNd @ W)"],
         "solver": "simultaneous explicit Euler; drive[k] active over [t[k], t[k+1])",
@@ -331,6 +353,15 @@ def run_rate_model(source, output, code, parameters=None, stimuli=None):
         "interpretation": "Tests propagation through a specified feedforward model. No heading/travel angles, movement encoding, displacement memory or steering implemented.",
         "validation_tolerance": "Max absolute error / block peak <= 0.02 versus continuous-time solution and half-dt; half-dt must not worsen analytical error.",
     }
+    if include_pfnv:
+        config["source_populations"] = source_types
+        config["disabled"][0] = "PFN recurrence and cross-population coupling"
+        config["coupling"] += "; identical gain per contact for PFNd and PFNv; all hDeltaB input compartments pooled"
+        config["equations"] = [
+            "tau * d(PFNd)/dt = -PFNd + ReLU(I_d)",
+            "tau * d(PFNv)/dt = -PFNv + ReLU(I_v)",
+            "tau * d(hDeltaB)/dt = -hDeltaB + ReLU(PFNd @ W_d + PFNv @ W_v)",
+        ]
     manifest = {
         "status": "running", "started_at_utc": datetime.now(timezone.utc).isoformat(),
         "source_directory": str(source.resolve()), "source_sha256": source_hashes,
@@ -338,7 +369,7 @@ def run_rate_model(source, output, code, parameters=None, stimuli=None):
         "code": code, "code_sha256": {p.name: sha256(p) for p in sorted(Path(__file__).parent.glob("*.py"))},
         "python": platform.python_version(),
         "packages": {p: version(p) for p in ["numpy", "pandas", "matplotlib"]},
-        "network": {"PFNd": len(counts.index), "hDeltaB": len(counts.columns),
+        "network": {**{pop: len(populations[pop]) for pop in source_types}, "hDeltaB": len(counts.columns),
                     "positive_pairs": int(counts.gt(0).to_numpy().sum()), "raw_contact_total": int(counts.to_numpy().sum())},
     }
     save_json(output / "rate_model.json", manifest)
@@ -359,11 +390,12 @@ def run_rate_model(source, output, code, parameters=None, stimuli=None):
             destination.mkdir(parents=True)
             times, drive = make_drive(counts.index, events, parameters)
             pre, post = integrate(weights, drive, parameters)
-            columns = [f"PFNd_{body}" for body in counts.index] + [f"hDeltaB_{body}" for body in counts.columns]
+            columns = source_columns + [f"hDeltaB_{body}" for body in counts.columns]
             pd.DataFrame(np.column_stack([times, pre, post]), columns=["time_s", *columns]).to_csv(destination / "activity.csv", index=False)
-            pd.DataFrame(np.column_stack([times, drive]), columns=["time_s", *[f"PFNd_{body}" for body in counts.index]]).to_csv(destination / "drive.csv", index=False)
-            summaries.append(response_summary(name, times, drive, pre, post, events))
-            for pop, ids, activity in [("PFNd", counts.index, pre), ("hDeltaB", counts.columns, post)]:
+            pd.DataFrame(np.column_stack([times, drive]), columns=["time_s", *source_columns]).to_csv(destination / "drive.csv", index=False)
+            summaries.append(response_summary(name, times, drive, pre, post, events, source_groups))
+            blocks = [(pop, counts.index[mask], pre[:, mask]) for pop, mask in source_groups.items()]
+            for pop, ids, activity in [*blocks, ("hDeltaB", counts.columns, post)]:
                 for j, body in enumerate(ids):
                     neuron_summaries.append({"experiment": name, "population": pop, "bodyId": int(body),
                                              "peak_activity": float(activity[:, j].max()),
@@ -375,7 +407,10 @@ def run_rate_model(source, output, code, parameters=None, stimuli=None):
             fine = integrate(weights, fine_drive, fine_parameters)
             exact = analytical_response(weights, counts.index, events, times, parameters.tau_s)
             replay = integrate(weights, drive, parameters)
-            for pop, coarse, refined, theory, repeated in zip(["PFNd", "hDeltaB"], [pre, post], fine, exact, replay):
+            validation_blocks = [(pop, pre[:, mask], fine[0][:, mask], exact[0][:, mask], replay[0][:, mask])
+                                 for pop, mask in source_groups.items()]
+            validation_blocks.append(("hDeltaB", post, fine[1], exact[1], replay[1]))
+            for pop, coarse, refined, theory, repeated in validation_blocks:
                 exact_error = relative_error(coarse, theory)
                 fine_error = relative_error(refined[::2], theory)
                 half_dt_error = relative_error(coarse, refined[::2])
@@ -388,7 +423,7 @@ def run_rate_model(source, output, code, parameters=None, stimuli=None):
             for tau_factor, gain_factor in [(1, 1), (.5, 1), (2, 1), (1, .5), (1, 2)]:
                 swept = replace(fine_parameters, tau_s=parameters.tau_s * tau_factor, gain=parameters.gain * gain_factor)
                 swept_pre, swept_post = integrate(counts.to_numpy(dtype=float) * swept.gain, fine_drive, swept)
-                sensitivity.append({**response_summary(name, fine_times, fine_drive, swept_pre, swept_post, events),
+                sensitivity.append({**response_summary(name, fine_times, fine_drive, swept_pre, swept_post, events, source_groups),
                                     "tau_s": swept.tau_s, "gain": swept.gain, "dt_s": swept.dt_s})
         pd.DataFrame(summaries).to_csv(output / "experiment_summary.csv", index=False)
         pd.DataFrame(neuron_summaries).to_csv(output / "neuron_summary.csv", index=False)

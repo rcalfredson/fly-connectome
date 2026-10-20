@@ -204,6 +204,8 @@ def run_recurrent_model(feedforward, census, output, code, gains=(0., .0005, .00
     fm = json.loads((feedforward / "rate_model.json").read_text())
     verify_model_data(feedforward, fm)
     config = json.loads((feedforward / "model_config.json").read_text())
+    if config.get("source_populations", ["PFNd"]) != ["PFNd"]:
+        raise ValidationError("The recurrence sweep currently supports PFNd-only feedforward runs.")
     if config.get("recurrent_gain", 0) or config.get("baseline_drive") != 0 or config.get("initial_activity") != 0 or config.get("nonlinearity") != "ReLU" or config.get("noise") != "none":
         raise ValidationError("Use a zero-baseline, zero-initial, noiseless feedforward ReLU run as the comparison source.")
     parameters = Parameters(**{key: config[key] for key in asdict(Parameters())})

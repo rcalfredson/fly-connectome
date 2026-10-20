@@ -24,6 +24,7 @@ def annotation_order(neurons, neuron_type):
     """Return one row per neuron; body ID only provides a deterministic tie break."""
     patterns = {
         "PFNd": r"PFNd\(PB04\)_([LR])([2-9])_C([1-8])",
+        "PFNv": r"PFNv\(PB05\)_([LR])([2-9])_C([1-9])",
         "hDeltaB": r"hDeltaB_(\d{2})_C([1-9]|1[0-2])",
     }
     if neuron_type not in patterns:
@@ -40,10 +41,10 @@ def annotation_order(neurons, neuron_type):
         match = re.fullmatch(patterns[neuron_type], neuron.instance)
         if not match:
             raise ValidationError(f"Unrecognized {neuron_type} instance: {neuron.instance!r}")
-        if neuron_type == "PFNd":
+        if neuron_type in ["PFNd", "PFNv"]:
             side, glomerulus, column = match.groups()
             glomerulus = int(glomerulus)
-            if int(column) != (glomerulus - 1 if side == "L" else 10 - glomerulus):
+            if neuron_type == "PFNd" and int(column) != (glomerulus - 1 if side == "L" else 10 - glomerulus):
                 raise ValidationError(f"Unexpected PB/FB mapping: {neuron.instance}")
             instance_index = None
         else:
@@ -56,7 +57,7 @@ def annotation_order(neurons, neuron_type):
             "label": f"{neuron.instance} | {neuron.bodyId}",
         })
     table = pd.DataFrame(rows)
-    keys = ["fb_column", "pb_side", "bodyId"] if neuron_type == "PFNd" else ["fb_column", "bodyId"]
+    keys = ["fb_column", "pb_side", "bodyId"] if neuron_type in ["PFNd", "PFNv"] else ["fb_column", "bodyId"]
     table = table.sort_values(keys).reset_index(drop=True)
     for column in ["pb_glomerulus", "instance_index"]:
         table[column] = table[column].astype("Int64")

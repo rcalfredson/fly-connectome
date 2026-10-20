@@ -22,12 +22,13 @@ from .connectivity import (
 )
 from .plotting import load_matrix, plot_heatmap
 from .anatomy import anatomical_heatmaps
-from .columns import column_analysis
+from .columns import column_analysis, pfnv_column_analysis
 from .spatial import run_pilot, plot_pilot
 from .spatial_population import run_population, render_population, verify_run_data
 from .inputs import run_inputs, replot_inputs
 from .rate_model import Parameters, run_rate_model, replot_rate_model
 from .recurrent_model import run_recurrent_model, replot_recurrent_model
+from .pfn import run_pfn_expansion
 
 
 def save_json(path, value):
@@ -147,6 +148,11 @@ def main(argv=None):
     columns.add_argument("--output", type=Path, required=True, help="New directory for column summaries")
     columns.add_argument("--show-column-caveat", action="store_true",
                          help="Show the annotation caveat above column heatmaps (hidden by default)")
+    columns_v = commands.add_parser("columns-pfnv", help="Aggregate saved PFNv -> hDeltaB by annotated FB column, offline")
+    columns_v.add_argument("source", type=Path, help="Complete PFNv-expanded extraction directory")
+    columns_v.add_argument("--output", type=Path, required=True, help="New directory for column summaries")
+    columns_v.add_argument("--show-column-caveat", action="store_true",
+                           help="Show the annotation caveat above column heatmaps (hidden by default)")
     spatial = commands.add_parser("spatial", help="Fetch the seven-neuron FB spatial pilot and plot")
     spatial.add_argument("source", type=Path, help="Complete saved extraction directory")
     spatial.add_argument("--output", type=Path, required=True, help="New output directory")
@@ -170,19 +176,26 @@ def main(argv=None):
     inputs_plot.add_argument("--output", type=Path, required=True, help="New plot directory")
     inputs_plot.add_argument("--show-fraction-caveat", action="store_true",
                              help="Show the anatomical-counts footer on the population fraction heatmap")
-    simulation = commands.add_parser("simulate", help="Run offline PFNd -> hDeltaB feedforward rate experiments")
-    simulation.add_argument("source", type=Path, help="Complete saved baseline connectivity extraction")
-    simulation.add_argument("--output", type=Path, required=True, help="New simulation output directory")
-    simulation.add_argument("--tau", type=float, default=.1, help="Shared illustrative time constant, seconds (default: 0.1)")
-    simulation.add_argument("--dt", type=float, default=.001, help="Euler timestep, seconds (default: 0.001)")
-    simulation.add_argument("--gain", type=float, default=.001, help="Excitatory coupling per contact (default: 0.001)")
-    simulation.add_argument("--duration", type=float, default=3., help="Experiment duration, seconds (default: 3)")
-    simulation.add_argument("--stimuli", type=Path, help="Custom stimulus JSON; otherwise run six default experiments")
+    pfn = commands.add_parser("expand-pfn", help="Extract PFNv -> hDeltaB and verify the original PFNd network")
+    pfn.add_argument("source", type=Path, help="Original complete PFNd connectivity extraction")
+    pfn.add_argument("--output", type=Path, required=True, help="New expanded connectivity directory")
+    for name, description in [
+        ("simulate", "Run offline PFNd -> hDeltaB feedforward rate experiments"),
+        ("simulate-pfn", "Run offline PFNd + PFNv -> hDeltaB feedforward rate experiments"),
+    ]:
+        simulation = commands.add_parser(name, help=description)
+        simulation.add_argument("source", type=Path, help="Complete saved connectivity extraction")
+        simulation.add_argument("--output", type=Path, required=True, help="New simulation output directory")
+        simulation.add_argument("--tau", type=float, default=.1, help="Shared illustrative time constant, seconds (default: 0.1)")
+        simulation.add_argument("--dt", type=float, default=.001, help="Euler timestep, seconds (default: 0.001)")
+        simulation.add_argument("--gain", type=float, default=.001, help="Excitatory coupling per contact (default: 0.001)")
+        simulation.add_argument("--duration", type=float, default=3., help="Experiment duration, seconds (default: 3)")
+        simulation.add_argument("--stimuli", type=Path, help="Custom stimulus JSON; otherwise run the default anatomical stimulation protocol")
     simulation_plot = commands.add_parser("simulate-plot", help="Replot validated rate-model traces offline")
     simulation_plot.add_argument("source", type=Path, help="Validated simulation output directory")
     simulation_plot.add_argument("--output", type=Path, required=True, help="New plot directory")
     simulation_plot.add_argument("--heatmaps-only", action="store_true",
-                                 help="Plot only PFNd and hDeltaB activity heatmaps, omitting stimulus/mean traces and peak summary")
+                                 help="Plot only population activity heatmaps, omitting stimulus/mean traces and peak summary")
     recurrent = commands.add_parser("simulate-recurrent", help="Repeat saved stimuli with subcritical PFNd recurrence")
     recurrent.add_argument("source", type=Path, help="Complete feedforward simulation run")
     recurrent.add_argument("--census", type=Path, required=True, help="Complete upstream PFNd input census")
@@ -205,9 +218,10 @@ def main(argv=None):
         elif args.command == "simulate-recurrent-plot":
             replot_recurrent_model(args.source, args.output, code_revision(), heatmaps_only=args.heatmaps_only)
             print(f"Saved recurrent plots to {args.output}")
-        elif args.command == "simulate":
+        elif args.command in ("simulate", "simulate-pfn"):
             parameters = Parameters(tau_s=args.tau, dt_s=args.dt, gain=args.gain, duration_s=args.duration)
-            result = run_rate_model(args.source, args.output, code_revision(), parameters, args.stimuli)
+            result = run_rate_model(args.source, args.output, code_revision(), parameters, args.stimuli,
+                                    include_pfnv=args.command == "simulate-pfn")
             print(f"Saved rate-model experiments to {args.output}")
             print(result["validation"])
         elif args.command == "simulate-plot":
@@ -217,21 +231,23 @@ def main(argv=None):
             replot_inputs(args.source, args.output, code_revision(),
                           show_fraction_caveat=args.show_fraction_caveat)
             print(f"Saved PFNd input plots to {args.output}")
-        elif args.command in ("spatial", "spatial-all", "inputs"):
+        elif args.command in ("spatial", "spatial-all", "inputs", "expand-pfn"):
             load_dotenv(Path.cwd() / ".env", override=False)
             token = os.environ.get("NEUPRINT_TOKEN", "").strip()
             if not token:
                 raise ValidationError("Set NEUPRINT_TOKEN in the environment or the local .env file.")
             client = Client(SERVER, dataset=DATASET, token=token)
             client.progress = False
-            if args.command == "inputs":
+            if args.command == "expand-pfn":
+                result = run_pfn_expansion(client, args.source, args.output, code_revision())
+            elif args.command == "inputs":
                 result = run_inputs(client, args.source, args.output, code_revision(),
                                     show_fraction_caveat=args.show_fraction_caveat)
             elif args.command == "spatial-all":
                 result = run_population(client, args.source, args.output, code_revision(), args.cache)
             else:
                 result = run_pilot(client, args.source, args.output, code_revision())
-            print(f"Saved {'PFNd input census' if args.command == 'inputs' else 'spatial analysis'} to {args.output}")
+            print(f"Saved {args.command} results to {args.output}")
             print(result["validation"])
         elif args.command == "spatial-all-plot":
             metadata = json.loads((args.source / "spatial_population.json").read_text())
@@ -255,6 +271,10 @@ def main(argv=None):
             result = anatomical_heatmaps(args.source, args.output)
             print(f"Saved anatomical tables and heatmaps to {args.output}")
             print(result["column_caveat"])
+        elif args.command == "columns-pfnv":
+            result = pfnv_column_analysis(args.source, args.output, show_column_caveat=args.show_column_caveat)
+            print(f"Saved PFNv column summaries and heatmaps to {args.output}")
+            print(result["validation"])
         elif args.command == "columns":
             result = column_analysis(args.source, args.anatomical, args.output,
                                      show_column_caveat=args.show_column_caveat)
