@@ -812,6 +812,183 @@ integration, and deterministic replay. These experiments validate propagation
 through the expanded feedforward network; movement-dependent input rules and
 functional angle assignments remain the next modeling step.
 
+## Movement-driven PFN encoding experiment
+
+```bash
+python -m fly_connectome simulate-movement results/pfn-hdeltab-v1.0 \
+  --output results/pfn-hdeltab-movement-v1.0
+```
+
+This offline experiment prescribes PFN activity from heading and body-relative
+velocity, then integrates hDeltaB rate dynamics. It tests the transformation
+through the anatomical weights conditional on the supplied encoding. It does
+not model upstream signal generation or assign preferred hDeltaB angles.
+The input construction follows the walking model in
+[Lu et al., 2022](https://doi.org/10.1038/s41586-021-04191-x),
+with the assumptions and measured results written to `experiment_notes.md`.
+
+Positive heading angles are clockwise; body velocity is positive forward and
+rightward. Head and body are aligned. The PB heading map uses L5/R5 = 0°,
+L7/R3 = +90°, and 45° steps, wrapping at ±180°. It is transferred to MaleCNS
+using each neuron's receiving PB annotation; FB column numbers do not assign
+angles. Preferred body movement directions are PFNd L/R = −31°/+31° and
+PFNv L/R = +137°/−137°. These literature-based assignments are fixed before
+evaluating any hDeltaB output and saved per body in `PFN_encoding_map.csv`.
+
+```text
+H_i = (1 + cos(heading - preferred_heading_i)) / 2
+projection_i = forward_velocity*cos(phi_i) + rightward_velocity*sin(phi_i)
+PFN_i = H_i * (b + 5*ReLU(projection_i / reference_speed))
+tau * d(hDeltaB)/dt = -hDeltaB + ReLU(PFN @ W)
+```
+
+Reference speed is 1 mm/s. PFN activity is in arbitrary units, with identical
+per-neuron scaling across types. It is prescribed directly, with no PFN rate
+filter. The hDeltaB time constant is the previous illustrative 0.1 s, timestep
+0.001 s, and coupling `W = 0.001 × raw_contacts`. There is no normalization,
+recurrence, feedback, noise, angle decoder, or integration of displacement.
+This is an adaptation using our raw weights, not an exact reproduction of the
+published code's connectivity preprocessing.
+
+Two PFN baseline offsets (`b=1` and `b=0`) each run 74 independent trials:
+
+- 8 world travel directions × 8 headings at 1 mm/s, giving 64 primary trials.
+- Zero translation at all 8 headings. Travel direction is undefined at rest.
+- Two additional speed checks, 0.5 and 2 mm/s, at heading/world direction 0°.
+
+Each trial lasts 2 s, with fixed heading and translation on `[0.2, 1.2)` s.
+hDeltaB starts at zero. The analysis window is `[1.0, 1.2)` s, after at least
+eight hDeltaB time constants of movement. A positive PFN baseline is active from
+t=0 and remains after translation stops: stationary controls need not be silent.
+
+Outputs preserve individual neuron identities. Both raw profiles and
+movement-evoked profiles are saved; the latter subtract the stationary trial
+with the same heading, baseline and time window. Amplitudes are reported
+separately. Primary pattern similarity is the cosine after subtracting each
+profile's across-neuron mean, so spatially uniform activation does not count as
+directional structure. Zero/constant centered profiles (L2 norm ≤1e−12) are
+undefined. Uncentered cosines are also saved. Patterns are never shifted to
+align, and no output angular mapping is fitted.
+
+The primary score is mean similarity for same-world/different-heading pairs
+minus mean similarity for different-world/same-heading pairs, at matched speed.
+There are 224 unordered pairs of each kind. All measurements describe this
+single connectome and model, not independent flies.
+
+Two null controls each use 199 realizations and seed 20261020:
+
+- **Shuffled connectivity:** permute whole source rows within each PFN type ×
+  PB side, preserving group-wise target totals and row profiles as a multiset.
+  One permutation is held fixed across the full condition grid.
+- **Shuffled movement labels:** independently permute world-direction labels
+  within each heading. Simulated inputs and responses remain unchanged, while
+  their associations for the comparisons are randomized. This is not temporal
+  shuffling of a trajectory.
+
+The same permutations are used for both baseline offsets. Null scores use the
+linear steady-window response, checked against the integrated movement-evoked
+profiles. Matched-rest subtraction removes the baseline contribution in this
+linear model, so identical evoked scores across baseline offsets are expected.
+The score is not a test of absolute directional accuracy or homing.
+
+The output includes `movement_config.json`, `conditions.csv`, encoding maps,
+raw/effective weights, source provenance, `comparison_summary.csv`,
+`null_comparisons.csv`, `null_permutations.npz`, `activity_summary.csv`, and
+`numerical_validation.csv`. Each baseline directory contains raw/evoked steady
+profiles, pair comparisons, a similarity matrix, compressed individual trial
+traces, and PNG/PDF plots. Trial NPZ files contain time, prescribed PFN activity,
+hDeltaB activity, heading, forward velocity and rightward velocity, with axes
+listed in the configuration. The manifest hashes all data and generated files.
+Numerical checks use an independent continuous-time solution, half dt, and
+deterministic replay; biological expectations do not gate successful execution.
+
+`--tau`, `--dt`, `--gain`, `--baseline-levels`, `--null-repeats`, and `--seed`
+support explicit overrides. Replot a saved or relocated run without a network
+connection or the original extraction:
+
+```bash
+python -m fly_connectome simulate-movement-plot results/pfn-hdeltab-movement-v1.0 \
+  --output results/pfn-hdeltab-movement-replot-v1.0
+```
+
+For normalized world-invariance (world travel −90°, 0°, +90°), body-direction
+sweep and heading sweep plots showing only matched-rest-subtracted activity:
+
+```bash
+python -m fly_connectome simulate-movement-plot results/pfn-hdeltab-movement-v1.0 \
+  --normalized-evoked-only --output results/pfn-hdeltab-movement-normalized-v1.0
+```
+
+Each condition (row) is divided by its own maximum across the 19 hDeltaB
+neurons, giving a common 0–1 color scale for comparing pattern shape. This
+removes amplitude differences between conditions. Rows with a peak at or below
+1e-12 remain zero. PNG/PDF plots, normalized CSVs and the original row peaks
+are saved for each PFN baseline.
+
+### Relative PFNd/PFNv weight experiments
+
+Optional source-type weight multipliers default to 1, preserving the original
+model. To isolate a sixfold PFNd multiplier while keeping raw-contact weights,
+PFNv gain, prescribed inputs, timing and analysis settings unchanged:
+
+```bash
+python -m fly_connectome simulate-movement results/pfn-hdeltab-v1.0 \
+  --pfnd-weight-multiplier 6 --pfnv-weight-multiplier 1 \
+  --output results/pfn-hdeltab-movement-pfnd6-v1.0
+```
+
+Weights are `base_gain * contacts * source_type_multiplier`. The multipliers
+do not change prescribed PFN activity. They are saved in the configuration;
+the original output directory remains intact. Use the same replot and decoder
+commands on this new run for corresponding figures. The Lu released code also
+normalizes incoming weights separately within each PFN type/side group before
+applying its factor of 6. This experiment isolates relative scaling and does
+not reproduce that normalization. `--pfnv-weight-multiplier` also permits
+explicit PFNv scaling experiments.
+
+To additionally use the incoming normalization from the Lu released code:
+
+```bash
+python -m fly_connectome simulate-movement results/pfn-hdeltab-v1.0 \
+  --normalize-incoming-by-group --pfnd-weight-multiplier 6 \
+  --output results/pfn-hdeltab-movement-groupnorm-pfnd6-v1.0
+```
+
+For every receiving hDeltaB neuron and each of the four PFN type/PB-side
+groups, divide each contact count by the group's total incoming contacts to
+that target, then multiply by the type multiplier and common gain. Zero-total
+groups remain zero. Thus each nonempty PFNd-side group has total effective
+weight `6 * gain`, and each PFNv-side group has total `1 * gain`. This matches
+the released weight preprocessing up to our retained common gain (0.001);
+absolute amplitudes therefore have a different scale. Other model settings,
+MaleCNS connectivity and the 19-neuron heatmap display remain our own. The
+normalization option defaults off and does not modify prior saved results.
+
+### Published hDeltaB angular decoder
+
+Apply the decoder from the [Lu et al. model notebook](https://github.com/druckmann-lab/Translational-velocity-and-heading-model/blob/main/Translational%20Velocity%20and%20Heading%20Simulation%20Runs.ipynb)
+to a saved movement run:
+
+```bash
+python -m fly_connectome decode-movement results/pfn-hdeltab-movement-v1.0 \
+  --output results/pfn-hdeltab-movement-decoder-v1.0
+```
+
+The authors group 19 neurons into 14 named positions, average duplicate names,
+and compute an activity-weighted circular average. The anatomical names and
+multiplicities in their `NEURON_LABELS.csv` match our MaleCNS inventory exactly;
+transferring their functional interpretation remains a modeling assumption.
+These positions differ from the 12 FB C labels. The decoder preserves their
+fitted angular offset of −10.62784572061546° and also saves the unshifted phase;
+it does not fit angles to our results. That offset is not a MaleCNS physiological
+calibration. This provides a Fig. 4d model analogue; Fig. 4h instead uses eight
+imaging ROIs with per-fly offset correction.
+
+Separate output includes the explicit body-ID mapping, raw and movement-evoked
+angles, resultant lengths, primary-grid plots, and provenance with hashes.
+Zero/cancelled vectors have undefined angles. Stationary controls have no true
+travel direction. The original simulation files are verified and reused.
+
 ## Tests
 
 ```bash

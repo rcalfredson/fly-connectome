@@ -29,6 +29,8 @@ from .inputs import run_inputs, replot_inputs
 from .rate_model import Parameters, run_rate_model, replot_rate_model
 from .recurrent_model import run_recurrent_model, replot_recurrent_model
 from .pfn import run_pfn_expansion
+from .movement import MovementParameters, run_movement, replot_movement
+from .movement_decoder import run_decoder
 
 
 def save_json(path, value):
@@ -207,10 +209,47 @@ def main(argv=None):
     recurrent_plot.add_argument("--output", type=Path, required=True, help="New plot directory")
     recurrent_plot.add_argument("--heatmaps-only", action="store_true",
                                help="Plot only activity heatmaps for every experiment in each recurrent gain condition")
+    movement = commands.add_parser("simulate-movement", help="Test prescribed heading/velocity PFN encoding offline")
+    movement.add_argument("source", type=Path, help="Validated PFNv-expanded connectivity extraction")
+    movement.add_argument("--output", type=Path, required=True, help="New movement experiment directory")
+    movement.add_argument("--tau", type=float, default=.1, help="Illustrative hDeltaB time constant in seconds")
+    movement.add_argument("--dt", type=float, default=.001, help="Euler timestep in seconds")
+    movement.add_argument("--gain", type=float, default=.001, help="Common gain applied to raw or group-normalized contacts")
+    movement.add_argument("--pfnd-weight-multiplier", type=float, default=1., help="Multiply PFNd weights after optional incoming normalization (default: 1)")
+    movement.add_argument("--pfnv-weight-multiplier", type=float, default=1., help="Multiply PFNv contact weights (default: 1)")
+    movement.add_argument("--normalize-incoming-by-group", action="store_true",
+                          help="Normalize each hDeltaB target's incoming contacts separately within each PFN type/PB-side group before applying multipliers")
+    movement.add_argument("--baseline-levels", type=float, nargs="+", default=[1., 0.], help="PFN encoding offsets (default: 1 0)")
+    movement.add_argument("--null-repeats", type=int, default=199, help="Realizations for each shuffle control")
+    movement.add_argument("--seed", type=int, default=20261020, help="Seed for reproducible controls")
+    movement_plot = commands.add_parser("simulate-movement-plot", help="Replot validated movement experiments offline")
+    movement_plot.add_argument("source", type=Path)
+    movement_plot.add_argument("--output", type=Path, required=True)
+    movement_plot.add_argument("--normalized-evoked-only", action="store_true",
+                               help="Only world-invariance, body-direction and heading sweeps; matched rest subtracted, each row divided by its peak")
+    decoder = commands.add_parser("decode-movement", help="Apply the published Lu hDeltaB model decoder to saved movement trials")
+    decoder.add_argument("source", type=Path)
+    decoder.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "extract":
             extract(args.output)
+        elif args.command == "decode-movement":
+            run_decoder(args.source, args.output, code_revision())
+            print(f"Saved published-decoder comparisons to {args.output}")
+        elif args.command == "simulate-movement":
+            result = run_movement(args.source, args.output, code_revision(),
+                                  MovementParameters(tau_s=args.tau, dt_s=args.dt, gain=args.gain,
+                                                     pfnd_weight_multiplier=args.pfnd_weight_multiplier,
+                                                     pfnv_weight_multiplier=args.pfnv_weight_multiplier,
+                                                     normalize_incoming_by_group=args.normalize_incoming_by_group,
+                                                     null_repeats=args.null_repeats, seed=args.seed), args.baseline_levels)
+            print(f"Saved movement experiments to {args.output}")
+            print(result["validation"])
+        elif args.command == "simulate-movement-plot":
+            replot_movement(args.source, args.output, code_revision(),
+                            normalized_evoked_only=args.normalized_evoked_only)
+            print(f"Saved movement plots to {args.output}")
         elif args.command == "simulate-recurrent":
             result = run_recurrent_model(args.source, args.census, args.output, code_revision(), args.recurrent_gains)
             print(f"Saved recurrent rate-model experiments to {args.output}")
