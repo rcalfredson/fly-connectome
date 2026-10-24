@@ -31,6 +31,7 @@ from .recurrent_model import run_recurrent_model, replot_recurrent_model
 from .pfn import run_pfn_expansion
 from .movement import MovementParameters, run_movement, replot_movement
 from .movement_decoder import run_decoder
+from .trajectory import run_trajectory
 
 
 def save_json(path, value):
@@ -230,10 +231,19 @@ def main(argv=None):
     decoder = commands.add_parser("decode-movement", help="Apply the published Lu hDeltaB model decoder to saved movement trials")
     decoder.add_argument("source", type=Path)
     decoder.add_argument("--output", type=Path, required=True)
+    trajectory = commands.add_parser("replay-trajectory", help="Continuously replay prescribed PFN movement inputs offline")
+    trajectory.add_argument("source", type=Path, help="Validated selected group-normalized movement run")
+    trajectory.add_argument("--output", type=Path, required=True, help="New trajectory result directory")
+    trajectory.add_argument("--protocol", type=Path, help="CSV with time_s, heading_deg, forward_mm_s, right_mm_s; optional label")
+    trajectory.add_argument("--dt", type=float, default=.001, help="Euler timestep in seconds (default: 0.001)")
     args = parser.parse_args(argv)
     try:
         if args.command == "extract":
             extract(args.output)
+        elif args.command == "replay-trajectory":
+            result = run_trajectory(args.source, args.output, code_revision(), args.protocol, args.dt)
+            print(f"Saved continuous trajectory replay to {args.output}")
+            print(result["validation"])
         elif args.command == "decode-movement":
             run_decoder(args.source, args.output, code_revision())
             print(f"Saved published-decoder comparisons to {args.output}")

@@ -964,6 +964,88 @@ absolute amplitudes therefore have a different scale. Other model settings,
 MaleCNS connectivity and the 19-neuron heatmap display remain our own. The
 normalization option defaults off and does not modify prior saved results.
 
+### Continuous trajectory replay (preparatory milestone)
+
+Replay explicit movement inputs through the selected prescribed-PFN model, offline:
+
+```bash
+conda activate fly-connectome
+python -m fly_connectome replay-trajectory \
+  results/pfn-hdeltab-movement-groupnorm-pfnd6-v1.0 \
+  --output results/pfn-hdeltab-trajectory-v1.0
+```
+
+The output directory must be new. Existing movement commands, results and
+presentation exports remain intact. The command verifies the saved reference
+run's data hashes and recomputes its effective weights to check agreement.
+It requires incoming normalization separately per receiving hDeltaB neuron
+within PFNd-L/R and PFNv-L/R, PFNd multiplier 6, PFNv multiplier 1, gain 0.001,
+tau 0.1 s, and uses PFN baseline b=1. Default dt is 0.001 s; `--dt` allows
+convergence checks. Heading and translation preferences reuse the saved
+literature-based encoding map; no decoder is fitted or applied.
+
+The deterministic default sequence runs for 10 s: rest, straight forward
+movement, a clockwise right-angle heading turn, rightward sideways movement,
+backward movement reversing the earlier world-relative direction, rest,
+four forward legs forming a unit square, and final rest. The first four
+moving segments return to the origin at 4.5 s; the square closes at 9 s.
+hDeltaB starts at zero once, at t=0, and carries state across every boundary.
+
+Supply `--protocol path.csv` for a custom explicit time series with columns
+`time_s,heading_deg,forward_mm_s,right_mm_s` and optional `label`.
+There must be at least two finite rows, starting at t=0 with strictly
+increasing timestamps on the dt grid. Values are held on each half-open
+interval `[time_s[k], time_s[k+1])`; there is no interpolation across angles
+or velocities. At a boundary the input changes while activity remains the
+terminal state of the preceding interval. The last row is a terminal input
+sample and contributes no subsequent time interval. No extrapolation occurs.
+Instantaneous heading changes are prescribed turns, not simulated mechanics.
+
+Heading is degrees clockwise from arbitrary world +x. Body forward and
+rightward velocities are mm/s, with head and body aligned. World +y points
+rightward/downward in the trajectory plot. The external geometric conversion is
+`vx = vf*cos(theta) - vr*sin(theta)`,
+`vy = vf*sin(theta) + vr*cos(theta)` (trigonometry uses radians).
+Integrating each held world velocity over its interval gives exact geometric
+displacement in mm, up to floating-point roundoff. Return-to-origin is saved
+separately as minus displacement from the starting origin; its direction is
+undefined at the origin. These external references never drive the network
+and are not neural memory.
+
+Exports include `protocol.csv`, sampled inputs and geometry in `trajectory.csv`,
+`segment_boundaries.csv`, and all prescribed PFN rates, hDeltaB drive, raw Euler
+activity and exact held-drive activity in `activity.npz`. Neuron IDs and
+anatomical orders are saved. `trajectory_inputs.png/pdf` shows the path and
+inputs; `raw_activity.png/pdf` shows PFNd, PFNv and hDeltaB over time, with one
+unmodified amplitude scale per population over the entire sequence.
+`trajectory_config.json`, `trajectory_model.json`, `numerical_validation.json`
+and `experiment_notes.md` record conventions, parameters, hashes and limitations.
+
+No independently peak-normalized rows enter temporal amplitude analysis.
+No stationary subtraction is used: changing heading changes baseline PFN
+activity, so the fixed-heading stationary reference from independent trials
+does not apply. A future movement-evoked comparison would need continuous
+zero-translation replay with the same heading history, timing and initial
+conditions, explicitly described as a counterfactual input decomposition.
+
+The run checks Euler versus exact held-drive dynamics, half-dt sensitivity,
+deterministic replay, the existing fixed-condition solver, and geometric
+segment endpoints. Tests additionally verify coordinate signs, known path
+closure, stationary equilibrium and continuation with nonzero initial states:
+
+```bash
+python -m pytest -q tests/test_trajectory.py tests/test_movement.py
+```
+
+This establishes a numerically checked continuous feedforward replay pipeline.
+Numerical correctness is separate from biological validity. Slow hDeltaB
+relaxation is a leaky response to recent input, not displacement integration.
+Before neural home-vector modeling, the model needs an explicit neural
+accumulation mechanism, independently calibrated coordinate/readout mapping,
+retention and reset rules, and validation across duration, speed, turns,
+closure and perturbations. Upstream PFN generation, biological time constants,
+and behavioral homing remain unvalidated; no spatial learning is implemented.
+
 ### Published hDeltaB angular decoder
 
 Apply the decoder from the [Lu et al. model notebook](https://github.com/druckmann-lab/Translational-velocity-and-heading-model/blob/main/Translational%20Velocity%20and%20Heading%20Simulation%20Runs.ipynb)
