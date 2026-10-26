@@ -1071,6 +1071,109 @@ angles, resultant lengths, primary-grid plots, and provenance with hashes.
 Zero/cancelled vectors have undefined angles. Stationary controls have no true
 travel direction. The original simulation files are verified and reused.
 
+## Anatomical investigation and next modeling milestone
+
+The current direction is to [specify the vDeltaE–hDeltaG mechanism from the
+thesis before implementing new dynamics](docs/vdeltae_hdeltag_next_steps.md).
+The [vDeltaE input profiles](docs/vdeltae_input_profiles.md) summarize the
+anatomical and functional evidence gathered so far. No new neural dynamics or
+displacement-memory mechanism is implemented.
+
+The [historical circuit-selection report](docs/hdeltab_extension_recommendation.md) and
+[primary-source evidence ledger](docs/hdeltab_extension_evidence.md) document the
+24 October 2026 anatomical investigation. Its proposed hDeltaB→hDeltaG
+input-transfer experiment is superseded as the next milestone; the census and
+analysis remain useful. The specific vDeltaE–hDeltaG integration evidence was
+assessed from a dissertation abstract, not its full methods or equations.
+
+### Saved data and a fresh checkout
+
+This checkpoint includes the extraction/analysis tools, tests and research
+documents together. Thesis-based model specification and new neural dynamics
+belong to subsequent work; see the [checkpoint scope](docs/vdeltae_hdeltag_next_steps.md#repository-checkpoint).
+
+`results/` is ignored by Git. The dated directories named below describe local
+runs and are **not included in a checkout**. Research documents contain readable
+findings; raw body pairs, matrices, annotations and run manifests remain in those
+separate result directories. Existing results and presentation exports are
+preserved, not regenerated or added to this checkpoint.
+
+After [setup](#setup), either copy complete saved run directories from an
+existing installation or regenerate their prerequisites using the earlier
+workflows. Keep each manifest with all files it hashes; copying only a summary
+or matrix is insufficient.
+
+| Operation | Required saved inputs |
+| --- | --- |
+| hDeltaB downstream extraction | Original `pfnd-hdeltab-v1.0` run; see [baseline extraction](#extract-and-validate). Requires live neuPrint authentication and matching dataset metadata. |
+| vDeltaE input extraction | Complete downstream census plus the saved [PFNd ×6 movement run](#relative-pfndpfnv-weight-experiments), including its PFN identity map. Requires live neuPrint authentication. |
+| Downstream report generation | Complete downstream census, the same movement run, and [continuous trajectory run](#continuous-trajectory-replay-preparatory-milestone). Offline. |
+| Census verification | Complete corresponding census directory. Offline; no authentication or movement/trajectory runs needed. |
+| Tests | Installed development dependencies. Synthetic data and mocked queries; no saved runs or authentication needed. |
+
+To verify existing censuses without extracting data or creating new reports:
+
+```bash
+python -c 'from fly_connectome.extension_analysis import validate_saved_census; validate_saved_census("results/hdeltab-extension-census-final-20261024")'
+python -m fly_connectome.vdeltae_inputs \
+  results/vdeltae-inputs-live-20261024 --verify-only
+```
+
+Extraction and report commands below require **new output directories**; use
+different names if the dated outputs already exist. New live runs must pass
+dataset/identity checks and need not reproduce a historical snapshot if the
+server data have changed. Keep original manifests and code hashes as provenance;
+do not rewrite them to match a later code revision.
+
+### hDeltaB downstream census and analysis
+
+Extract all direct Segment partners of the saved 19 hDeltaB neurons, plus a
+fixed whitelist of 54 directed candidate-population pairs:
+
+```bash
+python -m fly_connectome.circuit_extension results/pfnd-hdeltab-v1.0 \
+  --output results/hdeltab-extension-census-final-20261024
+```
+
+Generate readable summaries and verify saved counts, matrices, denominators,
+hashes and model neuron identities offline:
+
+```bash
+python -m fly_connectome.extension_analysis \
+  results/hdeltab-extension-census-final-20261024 \
+  --movement results/pfn-hdeltab-movement-groupnorm-pfnd6-v1.0 \
+  --trajectory results/pfn-hdeltab-trajectory-v1.0 \
+  --output results/hdeltab-extension-analysis-20261024
+```
+
+These dated directories already exist; use new output names for subsequent
+runs. Authentication follows the existing local `.env` convention. Raw body
+pairs, untyped partners and annotations are retained, without status, cropping,
+ROI or hemisphere filters. Output fractions divide by all outgoing Segment
+contact weights, never unique presynaptic site counts. Candidate input fractions
+use recorded complete-population postsynaptic counts. Exact queries and data
+hashes are saved; only a complete manifest denotes success. Existing movement,
+trajectory and presentation outputs are preserved.
+
+### vDeltaE upstream survey
+
+The [vDeltaE input survey](docs/vdeltae_input_survey.md) follows the revised
+investigation of the vDeltaE–hDeltaG motif. It retains all one-hop Segment inputs
+and checks overlap by body ID with the existing PFNd/PFNv/hDeltaB model:
+
+```bash
+python -m fly_connectome.vdeltae_inputs \
+  results/hdeltab-extension-census-final-20261024 \
+  --movement results/pfn-hdeltab-movement-groupnorm-pfnd6-v1.0 \
+  --output results/vdeltae-inputs-live-20261024
+python -m fly_connectome.vdeltae_inputs results/vdeltae-inputs-live-20261024 --verify-only
+```
+
+Use a new output name when repeating extraction. Raw annotations, untyped sources,
+per-target denominators, full modeled-source matrices, hashes and readable
+summaries are saved. Incoming weights must reconcile with every target's recorded
+post count. This identifies anatomical inputs; no neural dynamics are added.
+
 ## Tests
 
 ```bash
