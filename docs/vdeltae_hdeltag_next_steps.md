@@ -1,16 +1,21 @@
 # Current direction: specify the vDeltaE–hDeltaG mechanism
 
-Updated 26 October 2026. This is a research plan; no new neural dynamics have
-been implemented.
+Updated 28 October 2026. A subsequent [common rate framework pilot](common_rate_framework.md)
+implements numerical reference/candidate comparisons. The biological mechanism
+specification and validation remain incomplete; this plan records the evidence
+needed to advance beyond that pilot.
 
 ## Decision and scope
 
 The next milestone is a source-grounded specification of the vDeltaE–hDeltaG
 computation described in [Abby Janke's 2025 dissertation, *A Neuronal Circuit
 Motif for Leaky Vector Integration*](https://digitalcommons.rockefeller.edu/student_theses_and_dissertations/808/).
-Our review so far used the abstract. Full experimental methods, equations and
-parameter constraints remain to be examined. The dissertation evidence must
-remain distinct from peer-reviewed evidence.
+The initial review used the abstract. A subsequent [targeted full-text reading
+guide](janke_thesis_model_reading_guide.md) identifies the equations, relevant
+experiments, fitting methods and unresolved parameter conventions. It is the
+starting point for the specification. The separate pilot transcribes the source
+recurrences under explicit conventions; it does not validate the mechanism.
+The dissertation evidence must remain distinct from peer-reviewed evidence.
 
 This supersedes the [earlier hDeltaB→hDeltaG transfer proposal](hdeltab_extension_recommendation.md)
 as the next experiment. Preserve that dated proposal and its anatomical results.
@@ -82,6 +87,11 @@ it does not yet establish a biological home-vector mechanism or controller.
 
 ## Repository checkpoint
 
+The scope below records the **previous anatomical-investigation checkpoint**,
+committed as `88f8f43`. The current, separate framework checkpoint contains the
+shared rate solver, experiment adapters, centered/absolute-input comparison,
+tests, example configuration and guides described in [the pilot documentation](common_rate_framework.md).
+
 Keep the completed anatomical investigation in one commit: the bounded hDeltaB
 downstream and vDeltaE input extraction tools, offline analysis, validation
 tests, literature/evidence documents, and updated research direction. The
@@ -95,7 +105,7 @@ documents saved-run dependencies, regeneration entry points and offline
 verification. A fresh checkout can run the synthetic tests but does not contain
 the census data referenced by the reports.
 
-The commit boundary ends before full-thesis model specification and any new
-vDeltaE/hDeltaG dynamics, movement encoding or PFN interface. Those are subsequent
-research and implementation milestones. Recording this boundary does not create
-a commit or change the existing model.
+That anatomical commit boundary ended before new vDeltaE/hDeltaG dynamics,
+movement encoding or a PFN interface. The subsequent framework pilot implements
+controlled reference/candidate dynamics, while biological mechanism validation,
+movement-to-vDeltaE encoding and a justified PFN interface remain future work.

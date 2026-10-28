@@ -1073,11 +1073,14 @@ travel direction. The original simulation files are verified and reused.
 
 ## Anatomical investigation and next modeling milestone
 
-The current direction is to [specify the vDeltaE–hDeltaG mechanism from the
-thesis before implementing new dynamics](docs/vdeltae_hdeltag_next_steps.md).
+The current direction combines an [initial common rate framework](docs/common_rate_framework.md)
+for controlled numerical comparisons with continued [source-grounded specification
+of the vDeltaE–hDeltaG mechanism](docs/vdeltae_hdeltag_next_steps.md).
 The [vDeltaE input profiles](docs/vdeltae_input_profiles.md) summarize the
-anatomical and functional evidence gathered so far. No new neural dynamics or
-displacement-memory mechanism is implemented.
+anatomical and functional evidence gathered so far. These census workflows add
+no dynamics. A separate [initial common rate framework](docs/common_rate_framework.md)
+now supplies numerical pilot comparisons; it does not establish a biological
+displacement-memory mechanism.
 
 The [historical circuit-selection report](docs/hdeltab_extension_recommendation.md) and
 [primary-source evidence ledger](docs/hdeltab_extension_evidence.md) document the
@@ -1173,6 +1176,30 @@ Use a new output name when repeating extraction. Raw annotations, untyped source
 per-target denominators, full modeled-source matrices, hashes and readable
 summaries are saved. Incoming weights must reconcile with every target's recorded
 post count. This identifies anatomical inputs; no neural dynamics are added.
+
+## Initial common rate framework
+
+The [framework guide](docs/common_rate_framework.md) describes a small recurrent
+rate engine with signed, ID-aligned coupling, explicit sign evidence and optional
+slow excitability states. It preserves the existing PFN encoding and compares a
+separate signed Janke fluorescence reference with a hypothetical rate candidate.
+Both use arbitrary rate units; no Hz calibration or movement-to-vDeltaE rule is
+inferred. Existing commands, saved results and presentation exports are unchanged.
+
+```bash
+python -m fly_connectome.framework_experiments pfn-reference \
+  --movement results/pfn-hdeltab-movement-groupnorm-pfnd6-v1.0 \
+  --trajectory results/pfn-hdeltab-trajectory-v1.0 \
+  --output results/common-framework-pfn-pilot-20261026
+python -m fly_connectome.framework_experiments janke-comparison \
+  --output results/common-framework-janke-pilot-20261026
+```
+
+The PFN case requires the complete saved runs. The controlled Janke comparison
+requires no saved data or credentials and uses idealized columns, not a mapped
+MaleCNS population. Use new output names if these directories already exist.
+The guide includes configuration, offline verification, outputs, a custom
+recurrent example and the remaining biological assumptions.
 
 ## Tests
 
