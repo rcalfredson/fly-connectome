@@ -2,9 +2,9 @@
 
 Prepared 29 October 2026. Continue after the
 [annotation-audit command walkthrough](vdeltae_column_audit_command_walkthrough.md).
-This is suggested code and a staged investigation plan. The production module
-and tests remain for you to write by hand. No live extraction, morphology
-download, spatial assignment or simulation is performed by this document.
+Step 1 is implemented and tested in `fly_connectome/vdeltae_spatial_audit.py`.
+Subsequent stages remain suggestions for you to write by hand. No live extraction,
+morphology download, spatial assignment or simulation is performed by this document.
 
 ## Scope and stopping point
 
@@ -245,6 +245,10 @@ python -m pytest -q tests/test_vdeltae_spatial_audit.py
 ## Next pieces: agree and write them one at a time
 
 ### 2. Document annotation conventions and inspect query capabilities
+
+Continue with the [annotation-convention and capability walkthrough](vdeltae_spatial_capability_walkthrough.md).
+It seeds a primary-source evidence ledger and supplies offline probe selection,
+query builders and tests. Its live runner remains the following small piece.
 
 Build an evidence table with source title/URL or local artifact, exact cell
 type/dataset, relevant passage or field, interpretation, and uncertainty.

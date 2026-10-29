@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 from .connectivity import ValidationError
-from .inputs import sha256
+from .inputs import integers, sha256
 from .vdeltae_column_audit import verify_audit
 
 
@@ -80,4 +80,77 @@ def inspect_spatial_sources(audit_directory):
         "annotation_audit_directory": str(audit_directory),
         "annotation_audit_manifest_sha256": before,
         "sources": inventories,
+    }
+
+
+def select_spatial_probe(bodies):
+    required = {"bodyId", "type", "instance", "annotation_column"}
+    if not required.issubset(bodies.columns):
+        raise ValidationError(
+            "Probe selection needs the audited body annotation fields."
+        )
+    if bodies["bodyId"].isna().any() or bodies["bodyId"].duplicated().any():
+        raise ValidationError("Probe selection requires present, unique body IDs.")
+    if not bodies["type"].isin(["vDeltaE", "hDeltaG"]).all():
+        raise ValidationError(
+            "Probe selection supports only the audited vDeltaE/hDeltaG core."
+        )
+
+    rows = []
+    for population in ["vDeltaE", "hDeltaG"]:
+        selected = bodies.loc[bodies["type"].eq(population)].sort_values("bodyId")
+        if selected.empty:
+            raise ValidationError("Probe selection needs both audited populations.")
+        rows.append(selected.iloc[[0]])
+    return pd.concat(rows, ignore_index=True).copy()
+
+
+def spatial_probe_queries(body_ids):
+    ids = integers(pd.Series(list(body_ids), dtype=object), "Probe body IDs", 1)
+    if len(ids) != 2 or ids.duplicated().any():
+        raise ValidationError(
+            "Spatial capability probe requires exactly any two distinct body IDs."
+        )
+    ids = sorted(int(value) for value in ids)
+    selection = f"MATCH (n:Neuron) WHERE n.bodyId IN {ids}"
+    contained_sites = """
+        MATCH (n)-[:Contains]->(:SynapseSet)-[:Contains]->(s:Synapse)
+        WITH DISTINCT n, s
+    """
+    return {
+        "body_annotations": selection
+        + """
+            RETURN n.bodyId AS bodyId, n.type AS type, n.instance AS instance,
+                   n.roiInfo AS roiInfo, n.status AS status,
+                   n.statusLabel AS statusLabel, n.cropped AS cropped
+            ORDER BY bodyId
+        """,
+        "site_availability": selection
+        + """
+            OPTIONAL MATCH (n)-[:Contains]->(:SynapseSet)-[:Contains]->(s:Synapse)
+            WITH DISTINCT n, s
+            RETURN n.bodyId as bodyId,
+                   count(s) as all_contained_sites,
+                   sum(CASE WHEN s.FB = true THEN 1 ELSE 0 END) AS sites_marked_FB,
+                   sum(CASE WHEN s.location IS NOT NULL THEN 1 else 0 END) AS sites_with_location,
+                   sum(CASE WHEN s.confidence IS NOT NULL THEN 1 ELSE 0 END) AS sites_with_confidence
+            ORDER BY bodyId
+        """,
+        "site_property_inventory": selection
+        + contained_sites
+        + """
+            UNWIND keys(s) AS property
+            RETURN n.bodyId AS bodyId, s.type AS synapse_type,
+                   property, count(*) AS sites_with_property
+            ORDER BY bodyId, synapse_type, property
+        """,
+        "fb_site_categories": selection
+        + contained_sites
+        + """
+            WHERE s.FB = true
+            RETURN n.bodyId AS bodyId, s.type AS synapse_type,
+                   s.compartment AS compartment, s.split AS split,
+                   count(*) AS site_count
+            ORDER BY bodyId, synapse_type, compartment, split
+        """,
     }
