@@ -252,6 +252,12 @@ python -m pytest -q tests/test_vdeltae_spatial_audit.py
 
 ## E. Requirements for the subsequent live capability runner
 
+The next [live-runner walkthrough](vdeltae_live_capability_walkthrough.md)
+provides suggested validation helpers, resource handling, runner, offline
+verification, fake-client tests and a reproducible Bash entry point. The offline
+selection/query-building functions above are now implemented; the live stage
+remains suggested code until transcribed and tested.
+
 Write this as the next small piece after reviewing the query builders:
 
 1. Accept a verified audit directory and a fresh, separate output directory.
