@@ -3,8 +3,9 @@
 Prepared 29 October 2026. Continue after the offline selection/query builders in
 the [spatial-query walkthrough](vdeltae_spatial_capability_walkthrough.md). Add the
 suggestions below to `fly_connectome/vdeltae_spatial_audit.py`, one piece at a
-time. This document is not a production implementation, and no live request has
-been run while preparing it.
+time. The runner and tests are now implemented, and the bounded saved run has
+been verified. These snippets preserve the implementation guide; the production
+module and tests are authoritative.
 
 This is a two-body data-access probe. It saves the four existing query results,
 requests two unhealed skeletons and the FB mesh, and records what was accessible.
@@ -686,3 +687,7 @@ PY
 Review the site-availability/property/category tables and each resource status.
 Only after this data availability checkpoint should we design XYZ extraction and
 anatomical visualization. Leave the original body annotation audit unchanged.
+
+Continue with the [two-body coordinate and morphology pilot](vdeltae_coordinate_pilot_walkthrough.md),
+starting with point-query construction, coordinate validation, geometry parsing
+and offline plotting helpers before adding the saved extraction wrapper.
