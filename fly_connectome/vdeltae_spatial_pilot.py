@@ -176,6 +176,12 @@ def skeleton_segments(table):
 
 def read_context_mesh(path):
     vertices, faces = parse_obj(Path(path).read_bytes())
+    validate_context_mesh(vertices, faces)
+    return vertices, faces
+
+
+def validate_context_mesh(vertices, faces):
+    """Validate triangle geometry without treating it as an anatomical boundary."""
     if (
         vertices.ndim != 2
         or vertices.shape[1] != 3
@@ -187,16 +193,16 @@ def read_context_mesh(path):
         faces.ndim != 2
         or faces.shape[1] != 3
         or not len(faces)
+        or not np.issubdtype(faces.dtype, np.integer)
         or faces.min() < 0
         or faces.max() >= len(vertices)
     ):
         raise ValidationError("Invalid or empty FB mesh faces.")
-    return vertices, faces
 
 
-def body_projection_figure(points, skeleton, scale_um, title):
+def body_projection_figure(points, skeleton, scale_um, title, *, mesh=None):
     import matplotlib.pyplot as plt
-    from matplotlib.collections import LineCollection
+    from matplotlib.collections import LineCollection, PolyCollection
 
     scale = np.asarray(scale_um, dtype=float)
     if scale.shape != (3,) or not np.isfinite(scale).all() or not (scale > 0).all():
@@ -207,6 +213,13 @@ def body_projection_figure(points, skeleton, scale_um, title):
     context = skeleton[XYZ].to_numpy(dtype=float) * scale
     if len(points):
         context = np.concatenate([context, points[XYZ].to_numpy(dtype=float) * scale])
+    mesh_triangles = None
+    if mesh is not None:
+        vertices, faces = mesh
+        validate_context_mesh(vertices, faces)
+        vertices_um = vertices * scale
+        mesh_triangles = vertices_um[faces]
+        context = np.concatenate([context, vertices_um])
     views = [(0, 1), (0, 2), (1, 2)]
     colors = {"axon": "#d97706", "dendrite": "#0891b2", "linker": "#6b7280"}
     fig, axes = plt.subplots(2, 3, figsize=(14, 9), layout="constrained")
@@ -214,6 +227,12 @@ def body_projection_figure(points, skeleton, scale_um, title):
         for column, (a, b) in enumerate(views):
             for row in [0, 1]:
                 ax = axes[row, column]
+                if mesh_triangles is not None:
+                    ax.add_collection(PolyCollection(
+                        mesh_triangles[:, :, [a, b]], facecolors="#aeb6bf",
+                        edgecolors="none", alpha=.12, rasterized=True, zorder=0,
+                        label="FB mesh (context)",
+                    ))
                 if row == 1:
                     ax.add_collection(
                         LineCollection(
@@ -221,6 +240,7 @@ def body_projection_figure(points, skeleton, scale_um, title):
                             colors="#777777",
                             linewidths=0.4,
                             alpha=0.45,
+                            zorder=1,
                         )
                     )
                 for (compartment, polarity), group in points.groupby(
@@ -237,6 +257,7 @@ def body_projection_figure(points, skeleton, scale_um, title):
                         alpha=0.45,
                         label=f"{label} / {polarity} (n={len(group)})",
                         rasterized=True,
+                        zorder=3,
                     )
                 for axis, setter in [(a, ax.set_xlim), (b, ax.set_ylim)]:
                     low, high = context[:, axis].min(), context[:, axis].max()
@@ -248,11 +269,12 @@ def body_projection_figure(points, skeleton, scale_um, title):
                 ax.set_title(
                     "FB sites" if row == 0 else "Same sites + coarse unhealed skeleton"
                 )
-        if len(points):
-            axes[0, 0].legend(fontsize=7)
+        if len(points) or mesh is not None:
+            axes[0, 0].legend(fontsize=7, loc="upper left" if mesh is not None else "best")
         fig.suptitle(
             title
             + "\nDataset compartment colors; separate polarity markers; columns unresolved."
+            + ("\nFB mesh uses native coordinates for visual context only." if mesh is not None else "")
         )
         return fig
     except Exception:
@@ -284,6 +306,37 @@ def mesh_preview_figure(vertices):
     except Exception:
         plt.close(fig)
         raise
+
+
+def mesh_context_ranges(points, probe, skeletons, vertices, scale_um):
+    """Describe native-range compatibility; bounding-box counts are not containment."""
+    scale = np.asarray(scale_um, dtype=float)
+    low, high = vertices.min(axis=0), vertices.max(axis=0)
+    rows = []
+    objects = [(None, "FB_mesh_vertices", vertices)]
+    for body in probe["bodyId"]:
+        body = int(body)
+        sites = points.loc[points["bodyId"].eq(body), XYZ].to_numpy(dtype=float)
+        if len(sites) and ((sites.max(axis=0) < low) | (sites.min(axis=0) > high)).any():
+            raise ValidationError("FB site and mesh coordinate ranges do not overlap; review frame and units.")
+        objects.extend([
+            (body, "FB_sites", sites),
+            (body, "skeleton_nodes", skeletons[body][XYZ].to_numpy(dtype=float)),
+        ])
+    for body, name, coordinates in objects:
+        within = ((coordinates >= low) & (coordinates <= high)).all(axis=1)
+        row = {
+            "bodyId": body, "source": name, "point_count": len(coordinates),
+            "within_mesh_xyz_bounds_count": int(within.sum()),
+            "within_mesh_xyz_bounds_fraction": float(within.mean()) if len(coordinates) else np.nan,
+        }
+        for index, axis in enumerate(XYZ):
+            for stat, operation in [("min", np.min), ("max", np.max)]:
+                value = float(operation(coordinates[:, index])) if len(coordinates) else np.nan
+                row[f"{axis}_{stat}_native"] = value
+                row[f"{axis}_{stat}_um"] = value * scale[index]
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def coordinate_analysis_tables(points, probe, skeletons, scale_um):
@@ -546,7 +599,7 @@ def axis_distribution_figure(points, probe, scale_um, bins=40):
         raise
 
 
-def export_coordinate_pilot(run, output):
+def export_coordinate_pilot(run, output, *, mesh_overlay=False):
     """Render a verified pilot offline into a separate, new export directory."""
     import matplotlib
     matplotlib.use("Agg")
@@ -555,6 +608,10 @@ def export_coordinate_pilot(run, output):
     run, output = Path(run).resolve(), Path(output).resolve()
     source_hash = sha256(run / "coordinates.json")
     manifest = verify_coordinate_pilot(run)
+    if type(mesh_overlay) is not bool:
+        raise ValidationError("mesh_overlay must be a boolean.")
+    if mesh_overlay and manifest["source_resources"]["FB_mesh"]["status"] != "retrieved":
+        raise ValidationError("FB context overlay requires a retrieved, verified mesh.")
     protected = [run, Path(manifest["source_probe"]), Path(manifest["source_inventory"]["annotation_audit_directory"])] + [
         Path(source["source_manifest_file"]).parent for source in manifest["source_inventory"]["sources"].values()
     ]
@@ -567,7 +624,7 @@ def export_coordinate_pilot(run, output):
         "started_at_utc": datetime.now(timezone.utc).isoformat(), "source": str(run),
         "source_manifest_sha256": source_hash,
         "settings": {"formats": ["png", "pdf"], "dpi": 160, "histogram_bins": 40,
-                     "subsampling": None, "mesh_overlay": False, "anatomical_axes": "unverified"},
+                     "subsampling": None, "mesh_overlay": mesh_overlay, "anatomical_axes": "unverified"},
     }
     save_json(output / "plots.json", record)
     try:
@@ -575,6 +632,27 @@ def export_coordinate_pilot(run, output):
         points = pd.read_csv(run / "fb_sites_raw.csv")
         probe = pd.read_csv(run / "probe_bodies.csv")
         scale = np.asarray(manifest["native_to_um_per_axis"])
+        skeletons = {
+            int(body): read_native_swc(run / f"skeleton_{int(body)}.swc")[0]
+            for body in probe["bodyId"]
+        }
+        mesh = None
+        if mesh_overlay:
+            mesh = read_context_mesh(run / "FB.obj")
+            mesh_context_ranges(points, probe, skeletons, mesh[0], scale).to_csv(
+                output / "mesh_coordinate_ranges.csv", index=False
+            )
+            record["mesh_context"] = {
+                "source_mesh_sha256": manifest["artifact_sha256"]["FB.obj"],
+                "native_to_um_per_axis": scale.tolist(), "translation_um": [0., 0., 0.],
+                "axis_order": XYZ,
+                "coordinate_basis": "Native identity overlay supported by source provenance and coordinate ranges; no fitted registration.",
+                "range_check": "Axis-aligned bounds only; not mesh containment or a column assignment.",
+                "display": {"facecolor": "#aeb6bf", "alpha": .12, "edges": False,
+                            "clipping_to_mesh": False, "all_sites_and_skeleton_segments": True,
+                            "legend_location": "upper left"},
+            }
+            save_json(output / "plots.json", record)
 
         def save_figure(figure, stem):
             try:
@@ -585,10 +663,9 @@ def export_coordinate_pilot(run, output):
 
         for neuron in probe.itertuples(index=False):
             body = int(neuron.bodyId)
-            skeleton, _ = read_native_swc(run / f"skeleton_{body}.swc")
             save_figure(body_projection_figure(
-                points.loc[points["bodyId"].eq(body)], skeleton, scale,
-                f"{neuron.type} {body}: {neuron.instance}",
+                points.loc[points["bodyId"].eq(body)], skeletons[body], scale,
+                f"{neuron.type} {body}: {neuron.instance}", mesh=mesh,
             ), f"body_{body}")
         save_figure(axis_distribution_figure(points, probe, scale, bins=40), "axis_distributions")
         if manifest["source_resources"]["FB_mesh"]["status"] == "retrieved":
@@ -600,7 +677,10 @@ def export_coordinate_pilot(run, output):
             "", "## Interpretation boundaries", "",
             "All FB-marked sites are shown without a confidence cutoff or spatial subsampling.",
             "Colors are dataset compartment labels; polarity is a separate marker/line style.",
-            "Skeletons are coarse and unhealed. The mesh is a separate raw-coordinate vertex preview.",
+            ("Skeletons are coarse and unhealed. The FB mesh is drawn as faint projected triangles behind every site; no points or branches are clipped."
+             if mesh_overlay else "Skeletons are coarse and unhealed. The mesh is a separate raw-coordinate vertex preview."),
+            ("The native identity overlay uses the recorded scale without fitted rotation or translation. Bounding-range agreement is not containment or independently calibrated registration."
+             if mesh_overlay else "No FB mesh is overlaid on the body figures."),
             "Means/quantiles describe distributions, not column positions or physiological signals.",
             "Layer fractions have group-specific denominators and retain unknown flags; layers can overlap.",
             "Column meanings, anatomical axis orientation and compartment provenance remain unresolved.",
@@ -635,6 +715,11 @@ def verify_coordinate_exports(output):
     if manifest["source_resources"]["FB_mesh"]["status"] == "retrieved":
         stems.append("FB_context")
     required = {"summary.md"} | {f"{stem}.{extension}" for stem in stems for extension in ["png", "pdf"]}
+    overlay = record.get("settings", {}).get("mesh_overlay", False)
+    if type(overlay) is not bool:
+        raise ValidationError("Saved mesh_overlay setting must be a boolean.")
+    if overlay:
+        required.add("mesh_coordinate_ranges.csv")
     hashes = record.get("artifact_sha256", {})
     if set(hashes) != required:
         raise ValidationError("Figure artifact inventory differs from expected exports.")
@@ -642,4 +727,23 @@ def verify_coordinate_exports(output):
         path = (output / name).resolve()
         if not path.is_relative_to(output) or not path.is_file() or sha256(path) != digest:
             raise ValidationError("Figure artifact is missing, outside the run, or changed.")
+    if overlay:
+        if manifest["source_resources"]["FB_mesh"]["status"] != "retrieved":
+            raise ValidationError("Overlay source has no retrieved mesh.")
+        context = record.get("mesh_context", {})
+        if (context.get("source_mesh_sha256") != manifest["artifact_sha256"]["FB.obj"]
+                or context.get("native_to_um_per_axis") != manifest["native_to_um_per_axis"]
+                or context.get("translation_um") != [0., 0., 0.]
+                or context.get("axis_order") != XYZ):
+            raise ValidationError("Mesh overlay provenance or coordinate transform differs from its source.")
+        points = pd.read_csv(run / "fb_sites_raw.csv")
+        probe = pd.read_csv(run / "probe_bodies.csv")
+        skeletons = {int(body): read_native_swc(run / f"skeleton_{int(body)}.swc")[0]
+                     for body in probe["bodyId"]}
+        vertices, _ = read_context_mesh(run / "FB.obj")
+        expected = mesh_context_ranges(points, probe, skeletons, vertices, manifest["native_to_um_per_axis"])
+        pd.testing.assert_frame_equal(
+            expected, pd.read_csv(output / "mesh_coordinate_ranges.csv"), check_dtype=False,
+            rtol=1e-12, atol=1e-12,
+        )
     return record

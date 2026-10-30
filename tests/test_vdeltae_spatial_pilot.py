@@ -414,3 +414,107 @@ def test_export_failure_is_recorded_and_figures_closed(coordinate_environment, t
         pilot.export_coordinate_pilot(run, output)
     assert json.loads((output / "plots.json").read_text())["status"] == "failed"
     assert not plt.get_fignums()
+
+
+def test_mesh_overlay_scales_triangles_and_retains_points_and_full_skeleton(tmp_path, point_example):
+    from matplotlib.collections import PathCollection, PolyCollection
+
+    points = point_example[0].iloc[[0]].copy()
+    before = points.copy(deep=True)
+    path = tmp_path / "body.swc"
+    path.write_text("1 0 0 0 0 1 -1\n2 0 16 16 64 1 1\n")
+    skeleton, _ = pilot.read_native_swc(path)
+    vertices = np.array([[0., 0., 0.], [16., 0., 0.], [0., 16., 0.]])
+    faces = np.array([[0, 1, 2]])
+    vertices_before = vertices.copy()
+    figure = pilot.body_projection_figure(
+        points, skeleton, [.008] * 3, "Synthetic FB context", mesh=(vertices, faces)
+    )
+    try:
+        for ax in figure.axes:
+            meshes = [artist for artist in ax.collections if isinstance(artist, PolyCollection)]
+            sites = [artist for artist in ax.collections if isinstance(artist, PathCollection)]
+            assert len(meshes) == 1 and len(meshes[0].get_paths()) == 1
+            assert sum(len(artist.get_offsets()) for artist in sites) == len(points)
+            assert all(meshes[0].get_zorder() < artist.get_zorder() for artist in sites)
+        np.testing.assert_allclose(
+            figure.axes[0].collections[0].get_paths()[0].vertices[:3], vertices[:, :2] * .008
+        )
+        assert figure.axes[1].get_ylim()[1] > 64 * .008
+        pd.testing.assert_frame_equal(points, before)
+        np.testing.assert_array_equal(vertices, vertices_before)
+    finally:
+        plt.close(figure)
+
+
+def test_mesh_range_diagnostic_is_not_triangle_containment():
+    # (12, 12) is outside this triangle but inside its rectangular coordinate bounds.
+    points = pd.DataFrame({"bodyId": [10], "x": [12.], "y": [12.], "z": [0.]})
+    probe = pd.DataFrame({"bodyId": [10]})
+    skeleton = pd.DataFrame({"x": [0.], "y": [0.], "z": [64.]})
+    vertices = np.array([[0., 0., 0.], [16., 0., 0.], [0., 16., 0.]])
+    result = pilot.mesh_context_ranges(points, probe, {10: skeleton}, vertices, [.008] * 3)
+    site_row = result.loc[result["source"].eq("FB_sites")].iloc[0]
+    assert site_row["point_count"] == 1
+    assert site_row["within_mesh_xyz_bounds_count"] == 1
+    assert site_row["within_mesh_xyz_bounds_fraction"] == 1
+
+
+def test_mesh_overlay_rejects_disjoint_coordinate_ranges(point_example):
+    points, probe, _, _ = point_example
+    skeleton = pd.DataFrame({"x": [0.], "y": [0.], "z": [0.]})
+    vertices = np.array([[1e6, 1e6, 1e6], [1e6 + 16, 1e6, 1e6], [1e6, 1e6 + 16, 1e6]])
+    with pytest.raises(ValidationError, match="coordinate ranges do not overlap"):
+        pilot.mesh_context_ranges(points, probe, {10: skeleton, 1: skeleton}, vertices, [.008] * 3)
+
+
+def test_mesh_overlay_export_round_trip_preserves_coordinate_sources(coordinate_environment, tmp_path):
+    client, source, _, _ = coordinate_environment
+    run, output = tmp_path / "coordinates", tmp_path / "fb-context"
+    pilot.run_coordinate_pilot(client, source, run)
+    source_hashes = {path.name: sha256(path) for path in run.iterdir() if path.is_file()}
+    result = pilot.export_coordinate_pilot(run, output, mesh_overlay=True)
+    assert result["settings"]["mesh_overlay"] is True
+    assert result["mesh_context"]["native_to_um_per_axis"] == [.008] * 3
+    assert result["mesh_context"]["translation_um"] == [0., 0., 0.]
+    assert result["mesh_context"]["display"]["clipping_to_mesh"] is False
+    assert len(pd.read_csv(output / "mesh_coordinate_ranges.csv")) == 5
+    assert pilot.verify_coordinate_exports(output)["status"] == "complete"
+    assert {path.name: sha256(path) for path in run.iterdir() if path.is_file()} == source_hashes
+    assert not plt.get_fignums()
+
+
+def test_mesh_overlay_requires_a_retrieved_mesh(coordinate_environment, tmp_path):
+    client, source, _, _ = coordinate_environment
+    path = source / "capability.json"
+    record = json.loads(path.read_text())
+    record["resources"]["FB_mesh"] = {"status": "http_not_found", "http_status": 404}
+    del record["artifact_sha256"]["FB.obj"]
+    (source / "FB.obj").unlink()
+    path.write_text(json.dumps(record))
+    run, output = tmp_path / "coordinates", tmp_path / "fb-context"
+    pilot.run_coordinate_pilot(client, source, run)
+    with pytest.raises(ValidationError, match="requires a retrieved, verified mesh"):
+        pilot.export_coordinate_pilot(run, output, mesh_overlay=True)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("problem", ["ranges", "transform"])
+def test_mesh_overlay_verifier_checks_diagnostics_and_transform(coordinate_environment, tmp_path, problem):
+    client, source, _, _ = coordinate_environment
+    run, output = tmp_path / "coordinates", tmp_path / "fb-context"
+    pilot.run_coordinate_pilot(client, source, run)
+    pilot.export_coordinate_pilot(run, output, mesh_overlay=True)
+    path = output / "plots.json"
+    record = json.loads(path.read_text())
+    if problem == "ranges":
+        diagnostic = output / "mesh_coordinate_ranges.csv"
+        table = pd.read_csv(diagnostic)
+        table.loc[0, "x_min_um"] += 10
+        table.to_csv(diagnostic, index=False)
+        record["artifact_sha256"][diagnostic.name] = sha256(diagnostic)
+    else:
+        record["mesh_context"]["native_to_um_per_axis"] = [1., 1., 1.]
+    path.write_text(json.dumps(record))
+    with pytest.raises((AssertionError, ValidationError)):
+        pilot.verify_coordinate_exports(output)

@@ -14,6 +14,11 @@ explains the first 29 test cases; three additional source tests cover overlappin
 layers and zero-site bodies/runs, for 32 pilot cases in total. Section 6 supplies
 the commands for the live extraction and subsequent offline exports.
 
+The subsequent [FB mesh context walkthrough](vdeltae_fb_mesh_context_walkthrough.md)
+documents the implemented optional `mesh_overlay=True` export and seven more
+regression cases (39 pilot cases total). Existing exports and the default
+mesh-free command remain supported; overlay exports use a new directory.
+
 The two-body scope is unchanged. Save a coordinate run first, then render it
 offline to a different new directory. Never replace the source probe, previous
 plots, census results or presentation exports. Column mapping remains unresolved.

@@ -1083,6 +1083,11 @@ with fresh output directories and verifiable manifests. The walkthrough gives
 the live authentication block and offline run/export verification commands.
 This remains a two-neuron anatomical pilot: it assigns no physical column map,
 effective connection signs or new neural dynamics.
+For the implemented [FB context overlay](docs/vdeltae_fb_mesh_context_walkthrough.md),
+call `export_coordinate_pilot(source, fresh_output, mesh_overlay=True)` to draw
+faint projected mesh triangles behind the sites and full unhealed skeletons.
+The default remains mesh-free; range diagnostics and transform provenance are
+saved with overlays, and the mesh is not used for containment or column mapping.
 
 The current direction combines an [initial common rate framework](docs/common_rate_framework.md)
 for controlled numerical comparisons with continued [source-grounded specification

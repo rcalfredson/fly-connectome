@@ -10,7 +10,9 @@ Status: the helpers and their initial 15 tests are implemented. Continue with th
 [saved coordinate and figure workflow](vdeltae_coordinate_run_walkthrough.md)
 for the implemented extraction/export wrappers and accompanying descriptive analyses.
 The full pilot test file now contains 32 cases; no live coordinate extraction
-was run during implementation.
+was run during the initial helper implementation. The later
+[FB mesh context extension](vdeltae_fb_mesh_context_walkthrough.md) adds optional
+projected mesh faces to the body figures; the full pilot test file has 39 cases.
 
 ## Scope and coordinate conventions
 
