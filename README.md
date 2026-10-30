@@ -1093,6 +1093,11 @@ this pipeline to all 18 audited vDeltaE and eight hDeltaG bodies via
 `run_spatial_data_probe(..., full_population=True)`. Coordinate extraction inherits
 that verified selection; mesh-context exports add compartment overviews,
 per-body spatial profiles and paginated histograms while preserving pilot defaults.
+The [directed contact-mapping walkthrough](docs/vdeltae_contact_audit_walkthrough.md)
+adds a bounded `python -m fly_connectome.vdeltae_contact_audit` workflow. It retains
+raw vDeltaE→hDeltaG contacts, reconciles an explicit standard-confidence subset
+with the saved census, and exports body-pair/receiving-compartment matrices and
+contact-location overlays without assigning signs or a shared column grid.
 
 The current direction combines an [initial common rate framework](docs/common_rate_framework.md)
 for controlled numerical comparisons with continued [source-grounded specification
@@ -1221,6 +1226,15 @@ requires no saved data or credentials and uses idealized columns, not a mapped
 MaleCNS population. Use new output names if these directories already exist.
 The guide includes configuration, offline verification, outputs, a custom
 recurrent example and the remaining biological assumptions.
+
+## Body-aligned vDeltaE → hDeltaG firing pilot
+
+The [stage-1 walkthrough](docs/vdeltae_stage1_walkthrough.md) describes prescribed
+single-body and matched-total population stimulation using audited MaleCNS
+contacts, with DC-matched fast and slow negative-effect hypotheses. It includes
+commands, configuration, verification, exports and explicit biological limits.
+These experiments use the existing rate framework and do not assign movement
+tuning or a home-vector decoder.
 
 ## Tests
 

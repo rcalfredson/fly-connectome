@@ -4,6 +4,8 @@ Implemented 30 October 2026. Continue after the
 [two-neuron FB mesh context pilot](vdeltae_fb_mesh_context_walkthrough.md).
 This stage expands anatomical inspection to the **18 audited vDeltaE and eight
 audited hDeltaG bodies**. It adds no neural dynamics or physical column assignment.
+Continue with the [directed contact audit](vdeltae_contact_audit_walkthrough.md)
+to identify the actual vDeltaE→hDeltaG contacts and their receiving compartments.
 
 ## 1. Expand the selection, reuse the verified pipeline
 
