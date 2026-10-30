@@ -6,6 +6,12 @@ module: `fly_connectome/vdeltae_spatial_pilot.py`; suggested tests:
 `tests/test_vdeltae_spatial_pilot.py`. Transcribe one part at a time. No production
 code or live extraction was added while preparing this guide.
 
+Status: the helpers and their initial 15 tests are implemented. Continue with the
+[saved coordinate and figure workflow](vdeltae_coordinate_run_walkthrough.md)
+for the implemented extraction/export wrappers and accompanying descriptive analyses.
+The full pilot test file now contains 32 cases; no live coordinate extraction
+was run during implementation.
+
 ## Scope and coordinate conventions
 
 Keep vDeltaE 54907 and hDeltaG 19798. Reuse the verified saved probe's body
@@ -241,7 +247,8 @@ def body_projection_figure(points, skeleton, scale_um, title):
                 ax.set_xlabel(f"Native {XYZ[a]} (µm; orientation unverified)")
                 ax.set_ylabel(f"Native {XYZ[b]} (µm)")
                 ax.set_title("FB sites" if row == 0 else "Same sites + coarse unhealed skeleton")
-        axes[0, 0].legend(fontsize=7)
+        if len(points):
+            axes[0, 0].legend(fontsize=7)
         fig.suptitle(title + "\nDataset compartment colors; separate polarity markers; columns unresolved.")
         return fig
     except Exception:

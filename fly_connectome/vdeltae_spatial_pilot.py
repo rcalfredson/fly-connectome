@@ -1,18 +1,32 @@
+"""Bounded FB coordinate extraction, descriptive summaries and offline figures."""
+
+from datetime import datetime, timezone
+from importlib.metadata import version
 from io import StringIO
+import json
 from pathlib import Path
+import platform
 
 import numpy as np
 import pandas as pd
+from neuprint import fetch_meta
 
-from .connectivity import ValidationError
-from .inputs import integers
+from .connectivity import DATASET, SERVER, ValidationError
+from .extension_analysis import markdown
+from .inputs import integers, save_json, sha256
 from .spatial import parse_obj
-from .vdeltae_spatial_audit import spatial_probe_queries
+from .vdeltae_spatial_audit import (
+    check_probe_metadata, spatial_probe_queries, verify_spatial_data_probe,
+)
 
 XYZ = ["x", "y", "z"]
 LAYERS = [f"FBl{layer}" for layer in range(1, 10)]
 SWC_COLUMNS = ["node_id", "node_type", "x", "y", "z", "radius", "parent_id"]
 CATEGORY_KEYS = ["bodyId", "synapse_type", "compartment", "split"]
+COORDINATE_KIND = "vdeltae_hdeltag_coordinate_pilot_v1"
+ANALYSIS_FILES = (
+    "site_counts.csv", "site_spatial_summary.csv", "layer_summary.csv", "coordinate_ranges.csv",
+)
 
 
 def fb_site_query(body_ids):
@@ -234,7 +248,8 @@ def body_projection_figure(points, skeleton, scale_um, title):
                 ax.set_title(
                     "FB sites" if row == 0 else "Same sites + coarse unhealed skeleton"
                 )
-        axes[0, 0].legend(fontsize=7)
+        if len(points):
+            axes[0, 0].legend(fontsize=7)
         fig.suptitle(
             title
             + "\nDataset compartment colors; separate polarity markers; columns unresolved."
@@ -269,3 +284,362 @@ def mesh_preview_figure(vertices):
     except Exception:
         plt.close(fig)
         raise
+
+
+def coordinate_analysis_tables(points, probe, skeletons, scale_um):
+    """Describe validated sites without dropping null labels or overlapping layers."""
+    spatial_rows, layer_rows, range_rows = [], [], []
+    scale = np.asarray(scale_um, dtype=float)
+    body_totals = points.groupby("bodyId").size()
+    for (body, polarity, compartment), group in points.groupby(
+        ["bodyId", "synapse_type", "compartment"], dropna=False
+    ):
+        base = {"bodyId": int(body), "synapse_type": polarity, "compartment": compartment}
+        row = {
+            **base, "site_count": len(group), "body_FB_sites": int(body_totals.loc[body]),
+            "fraction_of_body_FB_sites": len(group) / body_totals.loc[body],
+            "confidence_missing": int(group["confidence"].isna().sum()),
+        }
+        for index, axis in enumerate(XYZ):
+            values = group[axis].to_numpy(dtype=float) * scale[index]
+            for name, value in [
+                ("mean", values.mean()), ("median", np.median(values)),
+                ("q10", np.quantile(values, .1)), ("q90", np.quantile(values, .9)),
+            ]:
+                row[f"{axis}_{name}_um"] = float(value)
+        spatial_rows.append(row)
+        for layer in LAYERS:
+            flags = group[layer]
+            if not flags.dropna().isin([True, False]).all():
+                raise ValidationError("Layer flags must be boolean or missing.")
+            marked = int(flags.eq(True).sum())
+            layer_rows.append({
+                **base, "layer": layer, "sites_true": marked,
+                "sites_false": int(flags.eq(False).sum()), "sites_unknown": int(flags.isna().sum()),
+                "group_FB_sites": len(group), "fraction_marked_of_group_FB_sites": marked / len(group),
+            })
+    for body in probe["bodyId"]:
+        body = int(body)
+        for name, coordinates in [
+            ("FB_sites", points.loc[points["bodyId"].eq(body), XYZ].to_numpy(dtype=float)),
+            ("skeleton_nodes", skeletons[body][XYZ].to_numpy(dtype=float)),
+        ]:
+            row = {"bodyId": body, "source": name, "count": len(coordinates)}
+            for index, axis in enumerate(XYZ):
+                for stat, operation in [("min", np.min), ("max", np.max)]:
+                    value = float(operation(coordinates[:, index])) if len(coordinates) else np.nan
+                    row[f"{axis}_{stat}_native"] = value
+                    row[f"{axis}_{stat}_um"] = value * scale[index]
+            range_rows.append(row)
+    spatial_columns = [
+        "bodyId", "synapse_type", "compartment", "site_count", "body_FB_sites",
+        "fraction_of_body_FB_sites", "confidence_missing",
+        *[f"{axis}_{stat}_um" for axis in XYZ for stat in ["mean", "median", "q10", "q90"]],
+    ]
+    layer_columns = [
+        "bodyId", "synapse_type", "compartment", "layer", "sites_true", "sites_false",
+        "sites_unknown", "group_FB_sites", "fraction_marked_of_group_FB_sites",
+    ]
+    return {
+        "site_counts.csv": category_counts(points),
+        "site_spatial_summary.csv": pd.DataFrame(spatial_rows, columns=spatial_columns),
+        "layer_summary.csv": pd.DataFrame(layer_rows, columns=layer_columns),
+        "coordinate_ranges.csv": pd.DataFrame(range_rows),
+    }
+
+
+def pilot_code_provenance():
+    return {
+        "code_sha256": {
+            path.name: sha256(path) for path in sorted(Path(__file__).resolve().parent.glob("*.py"))
+        },
+        "python_version": platform.python_version(),
+        "packages": {name: version(name) for name in ["neuprint-python", "numpy", "pandas", "matplotlib"]},
+    }
+
+
+def record_artifact_hashes(directory, manifest_name):
+    return {
+        path.name: sha256(path) for path in sorted(directory.iterdir())
+        if path.is_file() and path.name != manifest_name
+    }
+
+
+def run_coordinate_pilot(client, source_probe, output):
+    """Save the two-body coordinate pilot; require a fresh directory and stable sources."""
+    source_probe, output = Path(source_probe).resolve(), Path(output).resolve()
+    source_hash = sha256(source_probe / "capability.json")
+    source_manifest = verify_spatial_data_probe(source_probe)
+    inventory = source_manifest["source_inventory"]
+    if sha256(source_probe / "capability.json") != source_hash:
+        raise ValidationError("Source probe manifest changed during initial verification.")
+    protected = [source_probe, Path(inventory["annotation_audit_directory"])] + [
+        Path(source["source_manifest_file"]).parent for source in inventory["sources"].values()
+    ]
+    for directory in protected:
+        if output.is_relative_to(directory) or directory.is_relative_to(output):
+            raise ValidationError("Coordinate output must be separate from all source directories.")
+    if client.server.rstrip("/") != f"https://{SERVER}" or client.dataset != DATASET:
+        raise ValidationError("Client target differs from the configured dataset.")
+    probe = pd.read_csv(source_probe / "probe_bodies.csv", dtype={"bodyId": "Int64"})
+    query = fb_site_query(probe["bodyId"])
+    output.mkdir(parents=True, exist_ok=False)
+    manifest = {
+        "kind": COORDINATE_KIND, "status": "running",
+        "started_at_utc": datetime.now(timezone.utc).isoformat(),
+        "source_probe": str(source_probe), "source_manifest_sha256": source_hash,
+        "source_artifact_sha256": source_manifest["artifact_sha256"],
+        "source_inventory": inventory, "source_resources": source_manifest["resources"],
+        "selected_body_ids": [int(value) for value in probe["bodyId"]], "query": query,
+        "settings": {
+            "confidence_filter": None, "site_scope": "Distinct FB-marked Synapse nodes.",
+            "coordinates": "Native MaleCNS XYZ; anatomical axis orientation unverified.",
+            "unit_basis": "Saved 8 nm metadata and native MaleCNS skeleton documentation.",
+            "skeleton_healing": False, "column_mapping": "unresolved",
+            "analyses": "Descriptive groups, spatial quantiles, nullable layer flags and coordinate ranges.",
+        },
+    }
+    save_json(output / "coordinates.json", manifest)
+    try:
+        manifest.update(pilot_code_provenance())
+        before = fetch_meta(client=client)
+        save_json(output / "metadata_before.json", before)
+        check_probe_metadata(before, inventory)
+        scale = native_scale_um(before)
+        probe.to_csv(output / "probe_bodies.csv", index=False)
+        points = client.fetch_custom(query)
+        points.to_csv(output / "fb_sites_raw.csv", index=False)
+        validate_fb_points(
+            points, probe, pd.read_csv(source_probe / "site_availability.csv"),
+            pd.read_csv(source_probe / "fb_site_categories.csv"),
+        )
+        skeletons = {}
+        for body in probe["bodyId"]:
+            body = int(body)
+            resource = source_manifest["resources"][f"skeleton_{body}"]
+            if resource["status"] != "retrieved":
+                raise ValidationError("Morphology pilot requires both retrieved skeletons.")
+            raw = source_probe / resource["file"]
+            skeletons[body], comments = read_native_swc(raw)
+            (output / f"skeleton_{body}.swc").write_bytes(raw.read_bytes())
+            skeletons[body].to_csv(output / f"skeleton_{body}_nodes.csv", index=False)
+            save_json(output / f"skeleton_{body}_comments.json", comments)
+        mesh = source_manifest["resources"]["FB_mesh"]
+        if mesh["status"] == "retrieved":
+            mesh_path = source_probe / mesh["file"]
+            read_context_mesh(mesh_path)
+            (output / "FB.obj").write_bytes(mesh_path.read_bytes())
+        for filename, table in coordinate_analysis_tables(points, probe, skeletons, scale).items():
+            table.to_csv(output / filename, index=False)
+        after = fetch_meta(client=client)
+        save_json(output / "metadata_after.json", after)
+        check_probe_metadata(after, inventory)
+        verify_spatial_data_probe(source_probe)
+        if sha256(source_probe / "capability.json") != source_hash:
+            raise ValidationError("Saved source probe changed during coordinate extraction.")
+        manifest["native_to_um_per_axis"] = scale.tolist()
+        manifest["point_count"] = len(points)
+        manifest["status"] = "complete"
+    except Exception as error:
+        manifest["status"] = "failed"
+        manifest["error_type"] = type(error).__name__
+        raise
+    finally:
+        manifest["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
+        manifest["artifact_sha256"] = record_artifact_hashes(output, "coordinates.json")
+        save_json(output / "coordinates.json", manifest)
+    return manifest
+
+
+def verify_coordinate_pilot(run):
+    """Check saved hashes, source provenance, morphology and reconstructed analyses offline."""
+    run = Path(run).resolve()
+    manifest = json.loads((run / "coordinates.json").read_text())
+    if manifest.get("kind") != COORDINATE_KIND or manifest.get("status") != "complete":
+        raise ValidationError("Verification requires a complete coordinate pilot.")
+    ids = manifest["selected_body_ids"]
+    required = {"metadata_before.json", "metadata_after.json", "probe_bodies.csv", "fb_sites_raw.csv", *ANALYSIS_FILES}
+    for body in ids:
+        required.update({f"skeleton_{body}.swc", f"skeleton_{body}_nodes.csv", f"skeleton_{body}_comments.json"})
+    if manifest["source_resources"]["FB_mesh"]["status"] == "retrieved":
+        required.add("FB.obj")
+    hashes = manifest.get("artifact_sha256", {})
+    if not required.issubset(hashes):
+        raise ValidationError("Coordinate artifact inventory is incomplete.")
+    for name, digest in hashes.items():
+        path = (run / name).resolve()
+        if not path.is_relative_to(run) or not path.is_file() or sha256(path) != digest:
+            raise ValidationError("Coordinate artifact is missing, outside the run, or changed.")
+    source = Path(manifest["source_probe"])
+    source_manifest = verify_spatial_data_probe(source)
+    if sha256(source / "capability.json") != manifest["source_manifest_sha256"]:
+        raise ValidationError("Coordinate source probe manifest changed.")
+    for key, source_key in [
+        ("source_inventory", "source_inventory"), ("source_artifact_sha256", "artifact_sha256"),
+        ("source_resources", "resources"),
+    ]:
+        if manifest[key] != source_manifest[source_key]:
+            raise ValidationError("Coordinate provenance differs from its verified source.")
+    probe = pd.read_csv(run / "probe_bodies.csv")
+    pd.testing.assert_frame_equal(probe, pd.read_csv(source / "probe_bodies.csv"), check_dtype=False)
+    if ids != probe["bodyId"].tolist() or manifest["query"] != fb_site_query(ids):
+        raise ValidationError("Coordinate selection or query differs from the source probe.")
+    points = pd.read_csv(run / "fb_sites_raw.csv")
+    validate_fb_points(points, probe, pd.read_csv(source / "site_availability.csv"),
+                       pd.read_csv(source / "fb_site_categories.csv"))
+    if len(points) != manifest["point_count"]:
+        raise ValidationError("Recorded site count differs from raw points.")
+    for filename in ["metadata_before.json", "metadata_after.json"]:
+        metadata = json.loads((run / filename).read_text())
+        check_probe_metadata(metadata, manifest["source_inventory"])
+        scale = native_scale_um(metadata)
+        if scale.tolist() != manifest["native_to_um_per_axis"]:
+            raise ValidationError("Coordinate scale differs from recorded metadata.")
+    skeletons = {}
+    for body in ids:
+        path = run / f"skeleton_{body}.swc"
+        resource = source_manifest["resources"][f"skeleton_{body}"]
+        if sha256(path) != source_manifest["artifact_sha256"][resource["file"]]:
+            raise ValidationError("Copied skeleton differs from the source geometry.")
+        skeletons[body], comments = read_native_swc(path)
+        pd.testing.assert_frame_equal(skeletons[body], pd.read_csv(run / f"skeleton_{body}_nodes.csv"), check_dtype=False)
+        if comments != json.loads((run / f"skeleton_{body}_comments.json").read_text()):
+            raise ValidationError("Saved skeleton comments differ from raw SWC headers.")
+    if "FB.obj" in required:
+        resource = source_manifest["resources"]["FB_mesh"]
+        if sha256(run / "FB.obj") != source_manifest["artifact_sha256"][resource["file"]]:
+            raise ValidationError("Copied mesh differs from the source geometry.")
+        read_context_mesh(run / "FB.obj")
+    for filename, expected in coordinate_analysis_tables(points, probe, skeletons, scale).items():
+        pd.testing.assert_frame_equal(expected, pd.read_csv(run / filename), check_dtype=False, rtol=1e-12, atol=1e-12)
+    return manifest
+
+
+def axis_distribution_figure(points, probe, scale_um, bins=40):
+    import matplotlib.pyplot as plt
+
+    scale = np.asarray(scale_um)
+    colors = {"axon": "#d97706", "dendrite": "#0891b2", "linker": "#6b7280"}
+    fig, axes = plt.subplots(len(probe), 3, figsize=(14, 7), squeeze=False, layout="constrained")
+    try:
+        for row, neuron in enumerate(probe.itertuples(index=False)):
+            selected = points.loc[points["bodyId"].eq(neuron.bodyId)]
+            for index, axis in enumerate(XYZ):
+                ax = axes[row, index]
+                all_values = points[axis].to_numpy(dtype=float) * scale[index]
+                edges = np.histogram_bin_edges(all_values, bins=bins)
+                for (compartment, polarity), group in selected.groupby(["compartment", "synapse_type"], dropna=False):
+                    label = "unannotated" if pd.isna(compartment) else str(compartment)
+                    ax.hist(group[axis].to_numpy(dtype=float) * scale[index], bins=edges,
+                            histtype="step", color=colors.get(label, "#a855f7"),
+                            linestyle="-" if polarity == "pre" else "--",
+                            label=f"{label}/{polarity}, n={len(group)}")
+                ax.set_xlabel(f"Native {axis} (µm; orientation unverified)")
+                ax.set_ylabel("Site count per bin")
+                ax.set_title(f"{neuron.type} {int(neuron.bodyId)}")
+            if len(selected):
+                axes[row, 0].legend(fontsize=6)
+        fig.suptitle("Native-axis distributions; shared bins, raw counts, no column interpretation")
+        return fig
+    except Exception:
+        plt.close(fig)
+        raise
+
+
+def export_coordinate_pilot(run, output):
+    """Render a verified pilot offline into a separate, new export directory."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    run, output = Path(run).resolve(), Path(output).resolve()
+    source_hash = sha256(run / "coordinates.json")
+    manifest = verify_coordinate_pilot(run)
+    protected = [run, Path(manifest["source_probe"]), Path(manifest["source_inventory"]["annotation_audit_directory"])] + [
+        Path(source["source_manifest_file"]).parent for source in manifest["source_inventory"]["sources"].values()
+    ]
+    for directory in protected:
+        if output.is_relative_to(directory) or directory.is_relative_to(output):
+            raise ValidationError("Plot directory must be separate from coordinate and source directories.")
+    output.mkdir(parents=True, exist_ok=False)
+    record = {
+        "kind": "vdeltae_hdeltag_coordinate_figures_v1", "status": "running",
+        "started_at_utc": datetime.now(timezone.utc).isoformat(), "source": str(run),
+        "source_manifest_sha256": source_hash,
+        "settings": {"formats": ["png", "pdf"], "dpi": 160, "histogram_bins": 40,
+                     "subsampling": None, "mesh_overlay": False, "anatomical_axes": "unverified"},
+    }
+    save_json(output / "plots.json", record)
+    try:
+        record.update(pilot_code_provenance())
+        points = pd.read_csv(run / "fb_sites_raw.csv")
+        probe = pd.read_csv(run / "probe_bodies.csv")
+        scale = np.asarray(manifest["native_to_um_per_axis"])
+
+        def save_figure(figure, stem):
+            try:
+                for extension in record["settings"]["formats"]:
+                    figure.savefig(output / f"{stem}.{extension}", dpi=record["settings"]["dpi"])
+            finally:
+                plt.close(figure)
+
+        for neuron in probe.itertuples(index=False):
+            body = int(neuron.bodyId)
+            skeleton, _ = read_native_swc(run / f"skeleton_{body}.swc")
+            save_figure(body_projection_figure(
+                points.loc[points["bodyId"].eq(body)], skeleton, scale,
+                f"{neuron.type} {body}: {neuron.instance}",
+            ), f"body_{body}")
+        save_figure(axis_distribution_figure(points, probe, scale, bins=40), "axis_distributions")
+        if manifest["source_resources"]["FB_mesh"]["status"] == "retrieved":
+            vertices, _ = read_context_mesh(run / "FB.obj")
+            save_figure(mesh_preview_figure(vertices), "FB_context")
+        (output / "summary.md").write_text("\n".join([
+            "# Two-body coordinate inspection", "", markdown(probe[["bodyId", "type", "instance"]]),
+            "", "## Raw site categories", "", markdown(pd.read_csv(run / "site_counts.csv")),
+            "", "## Interpretation boundaries", "",
+            "All FB-marked sites are shown without a confidence cutoff or spatial subsampling.",
+            "Colors are dataset compartment labels; polarity is a separate marker/line style.",
+            "Skeletons are coarse and unhealed. The mesh is a separate raw-coordinate vertex preview.",
+            "Means/quantiles describe distributions, not column positions or physiological signals.",
+            "Layer fractions have group-specific denominators and retain unknown flags; layers can overlap.",
+            "Column meanings, anatomical axis orientation and compartment provenance remain unresolved.",
+            "", f"Descriptive CSV tables and raw sources: {run}", "",
+        ]))
+        verify_coordinate_pilot(run)
+        if sha256(run / "coordinates.json") != source_hash:
+            raise ValidationError("Coordinate manifest changed during figure export.")
+        record["status"] = "complete"
+    except Exception as error:
+        record["status"] = "failed"
+        record["error_type"] = type(error).__name__
+        raise
+    finally:
+        record["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
+        record["artifact_sha256"] = record_artifact_hashes(output, "plots.json")
+        save_json(output / "plots.json", record)
+    return record
+
+
+def verify_coordinate_exports(output):
+    """Verify the complete figure inventory and its coordinate source without network access."""
+    output = Path(output).resolve()
+    record = json.loads((output / "plots.json").read_text())
+    if record.get("kind") != "vdeltae_hdeltag_coordinate_figures_v1" or record.get("status") != "complete":
+        raise ValidationError("Verification requires complete coordinate figures.")
+    run = Path(record["source"])
+    manifest = verify_coordinate_pilot(run)
+    if sha256(run / "coordinates.json") != record["source_manifest_sha256"]:
+        raise ValidationError("Figure source manifest changed.")
+    stems = [f"body_{body}" for body in manifest["selected_body_ids"]] + ["axis_distributions"]
+    if manifest["source_resources"]["FB_mesh"]["status"] == "retrieved":
+        stems.append("FB_context")
+    required = {"summary.md"} | {f"{stem}.{extension}" for stem in stems for extension in ["png", "pdf"]}
+    hashes = record.get("artifact_sha256", {})
+    if set(hashes) != required:
+        raise ValidationError("Figure artifact inventory differs from expected exports.")
+    for name, digest in hashes.items():
+        path = (output / name).resolve()
+        if not path.is_relative_to(output) or not path.is_file() or sha256(path) != digest:
+            raise ValidationError("Figure artifact is missing, outside the run, or changed.")
+    return record

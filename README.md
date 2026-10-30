@@ -1073,6 +1073,17 @@ travel direction. The original simulation files are verified and reused.
 
 ## Anatomical investigation and next modeling milestone
 
+The two-body [coordinate and visualization walkthrough](docs/vdeltae_coordinate_run_walkthrough.md)
+documents the implemented `fly_connectome.vdeltae_spatial_pilot` workflow. It
+extracts FB-marked synapse coordinates for the audited vDeltaE/hDeltaG probe,
+preserves cached unhealed morphology, checks saved counts and dataset metadata,
+and writes descriptive spatial/layer tables. Offline figure exports include
+native XYZ projections, site distributions and a separate mesh vertex preview,
+with fresh output directories and verifiable manifests. The walkthrough gives
+the live authentication block and offline run/export verification commands.
+This remains a two-neuron anatomical pilot: it assigns no physical column map,
+effective connection signs or new neural dynamics.
+
 The current direction combines an [initial common rate framework](docs/common_rate_framework.md)
 for controlled numerical comparisons with continued [source-grounded specification
 of the vDeltaE–hDeltaG mechanism](docs/vdeltae_hdeltag_next_steps.md).
