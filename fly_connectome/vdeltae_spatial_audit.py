@@ -176,12 +176,12 @@ def retrieve_probe_resource(fetch, path, text=False):
         return {"status": "unexpected_error", "error_type": type(error).__name__}
 
 
-def run_spatial_data_probe(client, audit_directory, output):
+def run_spatial_data_probe(client, audit_directory, output, *, full_population=False):
     audit_directory = Path(audit_directory).resolve()
     output = Path(output).resolve()
     bodies, inventory = inspect_spatial_sources(audit_directory)
-    probe = select_spatial_probe(bodies)
-    queries = spatial_probe_queries(probe["bodyId"])
+    probe = select_spatial_population(bodies) if full_population else select_spatial_probe(bodies)
+    queries = spatial_probe_queries(probe["bodyId"], full_population=full_population)
     source_directories = [audit_directory] + [
         Path(source["source_manifest_file"]).parent
         for source in inventory["sources"].values()
@@ -194,12 +194,14 @@ def run_spatial_data_probe(client, audit_directory, output):
     output.mkdir(parents=True, exist_ok=False)
     manifest = {
         "kind": SPATIAL_PROBE_KIND,
+        "full_population": full_population,
         "status": "running",
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
         "server": SERVER,
         "dataset": DATASET,
         "source_inventory": inventory,
-        "selection_rule": "Smallest audited body ID per population; no geometry/connectivity selection.",
+        "selection_rule": ("All audited vDeltaE/hDeltaG bodies; no geometry/connectivity selection."
+                           if full_population else "Smallest audited body ID per population; no geometry/connectivity selection."),
         "selected_body_ids": [int(value) for value in probe["bodyId"]],
         "queries": queries,
         "settings": {
@@ -353,7 +355,10 @@ def verify_spatial_data_probe(output):
         if not path.is_relative_to(output) or not path.is_file() or sha256(path) != digest:
             raise ValidationError("Spatial probe artifact is missing, outside the run, or changed.")
     probe = pd.read_csv(output / "probe_bodies.csv", dtype={"bodyId": "Int64"})
-    queries = spatial_probe_queries(probe["bodyId"])
+    full_population = manifest.get("full_population", False)
+    queries = spatial_probe_queries(probe["bodyId"], full_population=full_population)
+    if manifest.get("selected_body_ids") != probe["bodyId"].tolist():
+        raise ValidationError("Saved selection differs from the body table.")
     if manifest.get("queries") != queries:
         raise ValidationError("Saved probe queries differ from the declared query design.")
     tables = {name: pd.read_csv(output / f"{name}.csv") for name in queries}
@@ -364,7 +369,7 @@ def verify_spatial_data_probe(output):
     bodies, current_inventory = inspect_spatial_sources(inventory["annotation_audit_directory"])
     if current_inventory != inventory:
         raise ValidationError("Saved spatial probe source provenance changed.")
-    expected = select_spatial_probe(bodies)
+    expected = select_spatial_population(bodies) if full_population else select_spatial_probe(bodies)
     pd.testing.assert_frame_equal(probe, expected, check_dtype=False)
     expected_resources = {f"skeleton_{int(body)}" for body in probe["bodyId"]} | {"FB_mesh"}
     if set(manifest.get("resources", {})) != expected_resources:
@@ -477,11 +482,26 @@ def select_spatial_probe(bodies):
     return pd.concat(rows, ignore_index=True).copy()
 
 
-def spatial_probe_queries(body_ids):
+def select_spatial_population(bodies):
+    """Keep every audited body, including repeated labels and edge columns."""
+    select_spatial_probe(bodies)  # Reuse schema, identity and population checks.
+    if bodies.groupby("type").size().to_dict() != {"hDeltaG": 8, "vDeltaE": 18}:
+        raise ValidationError("Full population requires the audited 18 vDeltaE and eight hDeltaG bodies.")
+    integers(bodies["bodyId"], "Population body IDs", 1)
+    return pd.concat([
+        bodies.loc[bodies["type"].eq(name)].sort_values("bodyId")
+        for name in ["vDeltaE", "hDeltaG"]
+    ], ignore_index=True).copy()
+
+
+def spatial_probe_queries(body_ids, *, full_population=False):
+    if type(full_population) is not bool:
+        raise ValidationError("full_population must be a boolean.")
     ids = integers(pd.Series(list(body_ids), dtype=object), "Probe body IDs", 1)
-    if len(ids) != 2 or ids.duplicated().any():
+    if len(ids) != (26 if full_population else 2) or ids.duplicated().any():
         raise ValidationError(
-            "Spatial capability probe requires exactly any two distinct body IDs."
+            "Spatial selection requires exactly 26 distinct body IDs." if full_population
+            else "Spatial capability probe requires exactly any two distinct body IDs."
         )
     ids = sorted(int(value) for value in ids)
     selection = f"MATCH (n:Neuron) WHERE n.bodyId IN {ids}"

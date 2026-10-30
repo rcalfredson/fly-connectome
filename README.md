@@ -1088,6 +1088,11 @@ call `export_coordinate_pilot(source, fresh_output, mesh_overlay=True)` to draw
 faint projected mesh triangles behind the sites and full unhealed skeletons.
 The default remains mesh-free; range diagnostics and transform provenance are
 saved with overlays, and the mesh is not used for containment or column mapping.
+The [full-population walkthrough](docs/vdeltae_population_walkthrough.md) extends
+this pipeline to all 18 audited vDeltaE and eight hDeltaG bodies via
+`run_spatial_data_probe(..., full_population=True)`. Coordinate extraction inherits
+that verified selection; mesh-context exports add compartment overviews,
+per-body spatial profiles and paginated histograms while preserving pilot defaults.
 
 The current direction combines an [initial common rate framework](docs/common_rate_framework.md)
 for controlled numerical comparisons with continued [source-grounded specification

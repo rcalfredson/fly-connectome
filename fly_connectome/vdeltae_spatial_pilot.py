@@ -29,9 +29,9 @@ ANALYSIS_FILES = (
 )
 
 
-def fb_site_query(body_ids):
+def fb_site_query(body_ids, *, full_population=False):
     body_ids = list(body_ids)
-    spatial_probe_queries(body_ids)  # Reuse the existing two-ID validation.
+    spatial_probe_queries(body_ids, full_population=full_population)
     ids = sorted(int(value) for value in body_ids)
     layers = ", ".join(f"s.{name} AS {name}" for name in LAYERS)
     return f"""
@@ -419,7 +419,7 @@ def record_artifact_hashes(directory, manifest_name):
 
 
 def run_coordinate_pilot(client, source_probe, output):
-    """Save the two-body coordinate pilot; require a fresh directory and stable sources."""
+    """Save selected coordinates; require a fresh directory and stable sources."""
     source_probe, output = Path(source_probe).resolve(), Path(output).resolve()
     source_hash = sha256(source_probe / "capability.json")
     source_manifest = verify_spatial_data_probe(source_probe)
@@ -435,10 +435,12 @@ def run_coordinate_pilot(client, source_probe, output):
     if client.server.rstrip("/") != f"https://{SERVER}" or client.dataset != DATASET:
         raise ValidationError("Client target differs from the configured dataset.")
     probe = pd.read_csv(source_probe / "probe_bodies.csv", dtype={"bodyId": "Int64"})
-    query = fb_site_query(probe["bodyId"])
+    full_population = source_manifest.get("full_population", False)
+    query = fb_site_query(probe["bodyId"], full_population=full_population)
     output.mkdir(parents=True, exist_ok=False)
     manifest = {
         "kind": COORDINATE_KIND, "status": "running",
+        "full_population": full_population,
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
         "source_probe": str(source_probe), "source_manifest_sha256": source_hash,
         "source_artifact_sha256": source_manifest["artifact_sha256"],
@@ -471,7 +473,7 @@ def run_coordinate_pilot(client, source_probe, output):
             body = int(body)
             resource = source_manifest["resources"][f"skeleton_{body}"]
             if resource["status"] != "retrieved":
-                raise ValidationError("Morphology pilot requires both retrieved skeletons.")
+                raise ValidationError("Morphology inspection requires every selected skeleton to be retrieved.")
             raw = source_probe / resource["file"]
             skeletons[body], comments = read_native_swc(raw)
             (output / f"skeleton_{body}.swc").write_bytes(raw.read_bytes())
@@ -535,9 +537,12 @@ def verify_coordinate_pilot(run):
             raise ValidationError("Coordinate provenance differs from its verified source.")
     probe = pd.read_csv(run / "probe_bodies.csv")
     pd.testing.assert_frame_equal(probe, pd.read_csv(source / "probe_bodies.csv"), check_dtype=False)
-    if ids != probe["bodyId"].tolist() or manifest["query"] != fb_site_query(ids):
+    full_population = source_manifest.get("full_population", False)
+    if manifest.get("full_population", False) != full_population:
+        raise ValidationError("Coordinate scope differs from its verified source.")
+    if ids != probe["bodyId"].tolist() or manifest["query"] != fb_site_query(ids, full_population=full_population):
         raise ValidationError("Coordinate selection or query differs from the source probe.")
-    points = pd.read_csv(run / "fb_sites_raw.csv")
+    points = pd.read_csv(run / "fb_sites_raw.csv", low_memory=False)
     validate_fb_points(points, probe, pd.read_csv(source / "site_availability.csv"),
                        pd.read_csv(source / "fb_site_categories.csv"))
     if len(points) != manifest["point_count"]:
@@ -573,7 +578,7 @@ def axis_distribution_figure(points, probe, scale_um, bins=40):
 
     scale = np.asarray(scale_um)
     colors = {"axon": "#d97706", "dendrite": "#0891b2", "linker": "#6b7280"}
-    fig, axes = plt.subplots(len(probe), 3, figsize=(14, 7), squeeze=False, layout="constrained")
+    fig, axes = plt.subplots(len(probe), 3, figsize=(14, max(7, 2.8 * len(probe))), squeeze=False, layout="constrained")
     try:
         for row, neuron in enumerate(probe.itertuples(index=False)):
             selected = points.loc[points["bodyId"].eq(neuron.bodyId)]
@@ -608,10 +613,13 @@ def export_coordinate_pilot(run, output, *, mesh_overlay=False):
     run, output = Path(run).resolve(), Path(output).resolve()
     source_hash = sha256(run / "coordinates.json")
     manifest = verify_coordinate_pilot(run)
+    full_population = manifest.get("full_population", False)
     if type(mesh_overlay) is not bool:
         raise ValidationError("mesh_overlay must be a boolean.")
     if mesh_overlay and manifest["source_resources"]["FB_mesh"]["status"] != "retrieved":
         raise ValidationError("FB context overlay requires a retrieved, verified mesh.")
+    if full_population and not mesh_overlay:
+        raise ValidationError("Full-population export requires mesh_overlay=True for anatomical context.")
     protected = [run, Path(manifest["source_probe"]), Path(manifest["source_inventory"]["annotation_audit_directory"])] + [
         Path(source["source_manifest_file"]).parent for source in manifest["source_inventory"]["sources"].values()
     ]
@@ -623,13 +631,14 @@ def export_coordinate_pilot(run, output, *, mesh_overlay=False):
         "kind": "vdeltae_hdeltag_coordinate_figures_v1", "status": "running",
         "started_at_utc": datetime.now(timezone.utc).isoformat(), "source": str(run),
         "source_manifest_sha256": source_hash,
+        "full_population": full_population,
         "settings": {"formats": ["png", "pdf"], "dpi": 160, "histogram_bins": 40,
                      "subsampling": None, "mesh_overlay": mesh_overlay, "anatomical_axes": "unverified"},
     }
     save_json(output / "plots.json", record)
     try:
         record.update(pilot_code_provenance())
-        points = pd.read_csv(run / "fb_sites_raw.csv")
+        points = pd.read_csv(run / "fb_sites_raw.csv", low_memory=False)
         probe = pd.read_csv(run / "probe_bodies.csv")
         scale = np.asarray(manifest["native_to_um_per_axis"])
         skeletons = {
@@ -667,16 +676,34 @@ def export_coordinate_pilot(run, output, *, mesh_overlay=False):
                 points.loc[points["bodyId"].eq(body)], skeletons[body], scale,
                 f"{neuron.type} {body}: {neuron.instance}", mesh=mesh,
             ), f"body_{body}")
-        save_figure(axis_distribution_figure(points, probe, scale, bins=40), "axis_distributions")
+        if full_population:
+            from .vdeltae_population import (
+                column_profile_figure, population_figure_specs,
+                population_projection_figure, population_spatial_summary,
+            )
+            spatial_summary = population_spatial_summary(points, probe, scale)
+            spatial_summary.to_csv(output / "column_spatial_summary.csv", index=False)
+            for stem, kind, bodies, compartment in population_figure_specs(points, probe):
+                selected = points.loc[points["bodyId"].isin(bodies["bodyId"])]
+                if kind == "histogram":
+                    figure = axis_distribution_figure(selected, bodies, scale, bins=40)
+                elif kind == "profiles":
+                    figure = column_profile_figure(spatial_summary, bodies)
+                else:
+                    figure = population_projection_figure(selected, bodies, scale, mesh, compartment)
+                save_figure(figure, stem)
+        else:
+            save_figure(axis_distribution_figure(points, probe, scale, bins=40), "axis_distributions")
         if manifest["source_resources"]["FB_mesh"]["status"] == "retrieved":
             vertices, _ = read_context_mesh(run / "FB.obj")
             save_figure(mesh_preview_figure(vertices), "FB_context")
         (output / "summary.md").write_text("\n".join([
-            "# Two-body coordinate inspection", "", markdown(probe[["bodyId", "type", "instance"]]),
+            "# Full-population coordinate inspection" if full_population else "# Two-body coordinate inspection",
+            "", markdown(probe[["bodyId", "type", "instance", "annotation_column"]]),
             "", "## Raw site categories", "", markdown(pd.read_csv(run / "site_counts.csv")),
             "", "## Interpretation boundaries", "",
             "All FB-marked sites are shown without a confidence cutoff or spatial subsampling.",
-            "Colors are dataset compartment labels; polarity is a separate marker/line style.",
+            "Individual-body colors denote dataset compartments; population-overview colors denote annotation column labels. Polarity uses separate markers/line styles.",
             ("Skeletons are coarse and unhealed. The FB mesh is drawn as faint projected triangles behind every site; no points or branches are clipped."
              if mesh_overlay else "Skeletons are coarse and unhealed. The mesh is a separate raw-coordinate vertex preview."),
             ("The native identity overlay uses the recorded scale without fitted rotation or translation. Bounding-range agreement is not containment or independently calibrated registration."
@@ -684,7 +711,13 @@ def export_coordinate_pilot(run, output, *, mesh_overlay=False):
             "Means/quantiles describe distributions, not column positions or physiological signals.",
             "Layer fractions have group-specific denominators and retain unknown flags; layers can overlap.",
             "Column meanings, anatomical axis orientation and compartment provenance remain unresolved.",
+            "Population summaries keep bodies separate, preserve repeated/edge labels, and include absent compartments with zero counts. Site quantiles are not physical column centers.",
             "", f"Descriptive CSV tables and raw sources: {run}", "",
+            *( ["## Population figure index", ""] + [
+                f"- [{stem}.png]({stem}.png): {bodies['type'].iloc[0]}, {kind}"
+                + (f", compartment {compartment}" if compartment is not None else "")
+                for stem, kind, bodies, compartment in population_figure_specs(points, probe)
+            ] if full_population else [] ),
         ]))
         verify_coordinate_pilot(run)
         if sha256(run / "coordinates.json") != source_hash:
@@ -711,11 +744,25 @@ def verify_coordinate_exports(output):
     manifest = verify_coordinate_pilot(run)
     if sha256(run / "coordinates.json") != record["source_manifest_sha256"]:
         raise ValidationError("Figure source manifest changed.")
-    stems = [f"body_{body}" for body in manifest["selected_body_ids"]] + ["axis_distributions"]
+    full_population = manifest.get("full_population", False)
+    if record.get("full_population", False) != full_population:
+        raise ValidationError("Figure scope differs from its coordinate source.")
+    stems = [f"body_{body}" for body in manifest["selected_body_ids"]]
+    if full_population:
+        from .vdeltae_population import population_figure_specs, population_spatial_summary
+        points = pd.read_csv(run / "fb_sites_raw.csv", low_memory=False)
+        probe = pd.read_csv(run / "probe_bodies.csv")
+        stems.extend(spec[0] for spec in population_figure_specs(points, probe))
+    else:
+        stems.append("axis_distributions")
     if manifest["source_resources"]["FB_mesh"]["status"] == "retrieved":
         stems.append("FB_context")
     required = {"summary.md"} | {f"{stem}.{extension}" for stem in stems for extension in ["png", "pdf"]}
     overlay = record.get("settings", {}).get("mesh_overlay", False)
+    if full_population:
+        if not overlay:
+            raise ValidationError("Full-population figures require mesh context.")
+        required.add("column_spatial_summary.csv")
     if type(overlay) is not bool:
         raise ValidationError("Saved mesh_overlay setting must be a boolean.")
     if overlay:
@@ -727,6 +774,10 @@ def verify_coordinate_exports(output):
         path = (output / name).resolve()
         if not path.is_relative_to(output) or not path.is_file() or sha256(path) != digest:
             raise ValidationError("Figure artifact is missing, outside the run, or changed.")
+    if full_population:
+        expected = population_spatial_summary(points, probe, manifest["native_to_um_per_axis"])
+        pd.testing.assert_frame_equal(expected, pd.read_csv(output / "column_spatial_summary.csv"),
+                                      check_dtype=False, rtol=1e-12, atol=1e-12)
     if overlay:
         if manifest["source_resources"]["FB_mesh"]["status"] != "retrieved":
             raise ValidationError("Overlay source has no retrieved mesh.")
@@ -736,7 +787,7 @@ def verify_coordinate_exports(output):
                 or context.get("translation_um") != [0., 0., 0.]
                 or context.get("axis_order") != XYZ):
             raise ValidationError("Mesh overlay provenance or coordinate transform differs from its source.")
-        points = pd.read_csv(run / "fb_sites_raw.csv")
+        points = pd.read_csv(run / "fb_sites_raw.csv", low_memory=False)
         probe = pd.read_csv(run / "probe_bodies.csv")
         skeletons = {int(body): read_native_swc(run / f"skeleton_{int(body)}.swc")[0]
                      for body in probe["bodyId"]}

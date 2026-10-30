@@ -1,6 +1,8 @@
 # Review walkthrough: cells and synapse sites with FB mesh context
 
 Implemented 30 October 2026 in `fly_connectome/vdeltae_spatial_pilot.py`.
+The subsequent [full-population walkthrough](vdeltae_population_walkthrough.md)
+extends the verified pipeline to all 26 audited bodies and adds population comparisons.
 Continue after the [saved coordinate and figure workflow](vdeltae_coordinate_run_walkthrough.md).
 This is an offline export change. It reuses the verified coordinate run and
 downloads no new data. Review the source in the stages below.
