@@ -1236,6 +1236,17 @@ commands, configuration, verification, exports and explicit biological limits.
 These experiments use the existing rate framework and do not assign movement
 tuning or a home-vector decoder.
 
+## CX home-vector capacity proposal
+
+The [home-vector subproject proposal](docs/cx_home_vector_proposal.md) reviews
+existing code, saved anatomy and primary modeling precedents, and specifies a
+bounded trainable-network experiment with frozen-readout baselines, history
+controls and randomized wiring comparisons. The [implementation walkthrough](docs/cx_home_vector_walkthrough.md)
+documents the initial offline preparation, ridge baselines, optional PyTorch
+training, memory ablation and rewiring commands. Initial engineering checks do
+not establish home-vector capacity. This capacity question is separate from
+the existing vDeltaE–hDeltaG mechanism investigation.
+
 ## Tests
 
 ```bash
