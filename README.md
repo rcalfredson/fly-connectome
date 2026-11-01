@@ -1259,6 +1259,10 @@ versioned prediction, perturbation, direction-statistics and network-change
 audits with explicit run/data/output paths. Historical experiment artifacts
 remain outside Git; the tools verify bundle hashes and preserve their inputs.
 
+The [expansion and learned-input design discussion](docs/cx_home_vector_expansion_and_learned_inputs.md)
+outlines a bounded vDeltaE-upstream candidate pool, a memoryless learned PFN
+encoder, and comparisons separating anatomy changes from encoding changes.
+
 ## Tests
 
 ```bash
