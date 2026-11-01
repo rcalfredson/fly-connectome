@@ -1247,6 +1247,18 @@ training, memory ablation and rewiring commands. Initial engineering checks do
 not establish home-vector capacity. This capacity question is separate from
 the existing vDeltaE–hDeltaG mechanism investigation.
 
+The [first-pilot home-vector claim assessment](docs/cx_home_vector_claim_assessment.md)
+documents which home-vector properties the trained readout supports, its failure
+cases, and the movement-history and directional capabilities supported so far.
+The [network-change audit](docs/cx_home_vector_network_changes.md) compares
+trained coupling with the contact-count initialization, including internal/input
+differences, signs, count proportionality and intrinsic dynamics.
+
+The [analysis replay guide](docs/cx_home_vector_analysis_walkthrough.md) provides
+versioned prediction, perturbation, direction-statistics and network-change
+audits with explicit run/data/output paths. Historical experiment artifacts
+remain outside Git; the tools verify bundle hashes and preserve their inputs.
+
 ## Tests
 
 ```bash
