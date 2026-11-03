@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from ..data import TYPES, write_json
+from ..data import write_json
 from ..dynamics import initial_coefficients
 from ..model import HomeVectorNetwork
 
@@ -18,6 +18,7 @@ def analyze(audit):
     if not manifest['settings']['recurrence']:
         raise ValueError('Network-weight comparison requires a recurrent training run.')
     circuit = audit.circuit
+    population_types = circuit.population_types
     config=json.loads((run/'training_config.json').read_text())
     checkpoint=torch.load(run/'best.pt',map_location='cpu',weights_only=True)
     state=checkpoint['model']
@@ -29,8 +30,8 @@ def analyze(audit):
     np.testing.assert_array_equal(state['counts'].numpy(),expected_counts)
     np.testing.assert_array_equal(state['pre'].numpy(),[e['pre'] for e in circuit.edges])
     np.testing.assert_array_equal(state['post'].numpy(),[e['post'] for e in circuit.edges])
-    np.testing.assert_array_equal(model.bias.detach().numpy(),np.full(len(TYPES),config['initial']['bias'],dtype=np.float32))
-    np.testing.assert_array_equal(model.tau.detach().numpy(),np.full(len(TYPES),config['initial']['tau_s'],dtype=np.float32))
+    np.testing.assert_array_equal(model.bias.detach().numpy(),np.full(len(population_types),config['initial']['bias'],dtype=np.float32))
+    np.testing.assert_array_equal(model.tau.detach().numpy(),np.full(len(population_types),config['initial']['tau_s'],dtype=np.float32))
 
     a=state['a'].numpy().astype(float)
     a0=state['a_initial'].numpy().astype(float)
@@ -89,7 +90,7 @@ def analyze(audit):
             proportionality_interpretation='not informative for a singleton' if mask.sum()==1 else 'multi-edge projection',
             **summary(mask)))
 
-    intrinsics=pd.DataFrame(dict(cell_type=list(TYPES),
+    intrinsics=pd.DataFrame(dict(cell_type=list(population_types),
         initial_tau_s=config['initial']['tau_s'],trained_tau_s=state['tau'].numpy(),
         initial_bias=config['initial']['bias'],trained_bias=state['bias'].numpy()))
     decoder=pd.DataFrame(dict(body_id=circuit.dynamic_ids,cell_type=circuit.dynamic_types,
@@ -138,7 +139,9 @@ def analyze(audit):
                      columns=pd.Index(circuit.dynamic_ids,name='postsynaptic_body_id')).to_csv(out/f'{name}.csv')
     write_json(out/'summary.json',report)
 
-    sizes=[circuit.dynamic_types.count(t) for t in TYPES]
+    if circuit.dynamic_types != [t for t in population_types for _ in range(circuit.dynamic_types.count(t))]:
+        raise ValueError('Network plots require neurons grouped in declared population order.')
+    sizes=[circuit.dynamic_types.count(t) for t in population_types]
     boundaries=np.cumsum(sizes)
     centers=boundaries-(np.asarray(sizes)+1)/2
     fig,axes=plt.subplots(1,3,figsize=(11,4.1),layout='constrained')
@@ -149,8 +152,8 @@ def analyze(audit):
         for boundary in boundaries[:-1]:
             ax.axhline(boundary-.5,color='black',linewidth=.6)
             ax.axvline(boundary-.5,color='black',linewidth=.6)
-        ax.set(xticks=centers,yticks=centers,xticklabels=TYPES,
-               yticklabels=TYPES,title=title,xlabel='Postsynaptic population')
+        ax.set(xticks=centers,yticks=centers,xticklabels=population_types,
+               yticklabels=population_types,title=title,xlabel='Postsynaptic population')
     axes[0].set_ylabel('Presynaptic population')
     fig.colorbar(im,ax=axes,label='Effective coupling (shared scale; arbitrary units)',shrink=.75)
     fig.savefig(out/'internal_weight_changes.png',dpi=180)

@@ -1,5 +1,9 @@
 # CX home-vector capacity: initial code setup
 
+For the optional hDeltaC expansion, see the
+[hDeltaC iteration guide](cx_home_vector_hdeltac_iteration.md). This document
+continues to describe the original core and default preparation behavior.
+
 Implemented 30 October 2026 following review of the
 [experiment proposal](cx_home_vector_proposal.md). This is an initial executable
 setup with engineering smoke runs, not a completed capacity experiment.

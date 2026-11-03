@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 TYPES = ("hDeltaB", "vDeltaE", "hDeltaG")
+SUPPORTED_TYPES = TYPES + ("hDeltaC",)
 OMISSIONS = ["PFNd/PFNv -> hDeltaG (unqueried)", "all edges into clamped PFNs",
              "all other populations and external boundary inputs"]
 
@@ -49,7 +50,7 @@ class Circuit:
             raise ValueError("Circuit IDs must be nonempty and unique.")
         if (len(self.input_types) != len(self.input_ids)
                 or len(self.dynamic_types) != len(self.dynamic_ids)
-                or not set(self.dynamic_types) <= set(TYPES)):
+                or not set(self.dynamic_types) <= set(SUPPORTED_TYPES)):
             raise ValueError("Invalid type/identity alignment.")
         for angles in [self.preferred_heading_deg, self.preferred_translation_deg]:
             if len(angles) != len(self.input_ids) or not np.isfinite(angles).all():
@@ -67,8 +68,13 @@ class Circuit:
     def as_dict(self):
         return dict(vars(self))
 
+    @property
+    def population_types(self):
+        """Stable intrinsic-parameter order; old three-population checkpoints retain their shapes."""
+        return tuple(t for t in SUPPORTED_TYPES if t in self.dynamic_types)
 
-def assemble(movement, census, inputs):
+
+def assemble(movement, census, inputs, hdeltac=None):
     """Verify existing source formats before selecting a fixed circuit boundary."""
     import pandas as pd
     from fly_connectome.extension_analysis import validate_saved_census
@@ -154,8 +160,12 @@ def assemble(movement, census, inputs):
                       mapping.preferred_heading_deg.tolist(), mapping.preferred_translation_deg.tolist(), edges)
     if len(circuit.input_ids) != 60 or len(edges) != 1075:
         raise ValueError("Circuit differs from reviewed 60-input/1075-edge boundary.")
-    return circuit, dict(source_sha256=hashes, snapshot=snapshots[0],
-                         projections=projections, omitted=OMISSIONS)
+    provenance = dict(source_sha256=hashes, snapshot=snapshots[0],
+                      projections=projections, omitted=list(OMISSIONS))
+    if hdeltac is not None:
+        from .hdeltac import extend
+        return extend(circuit, provenance, hdeltac)
+    return circuit, provenance
 
 
 def encode(circuit, controls):

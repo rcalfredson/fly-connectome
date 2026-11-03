@@ -3,6 +3,10 @@
 Design discussion, 2026-11-01. This document proposes follow-up experiments;
 it does not change the implemented model or report a new training result.
 
+The subsequent [hDeltaC iteration](cx_home_vector_hdeltac_iteration.md) implements
+one bounded expansion with the prescribed PFN mapping retained. Learned input
+encoding remains a separate proposal.
+
 ## What can be learned without prescribing tuning?
 
 Two different freedoms should be distinguished:

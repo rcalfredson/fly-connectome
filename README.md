@@ -1263,6 +1263,10 @@ The [expansion and learned-input design discussion](docs/cx_home_vector_expansio
 outlines a bounded vDeltaE-upstream candidate pool, a memoryless learned PFN
 encoder, and comparisons separating anatomy changes from encoding changes.
 
+The [hDeltaC iteration guide](docs/cx_home_vector_hdeltac_iteration.md) documents
+the optional 65-neuron dynamic circuit, bounded anatomical extraction, verified
+connection counts and commands for training with the unchanged PFN encoding.
+
 ## Tests
 
 ```bash

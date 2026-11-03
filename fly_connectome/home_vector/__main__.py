@@ -49,9 +49,11 @@ def fail(output, record, error):
 def prepare(args):
     if not np.isfinite(args.dt) or not 0 < args.dt <= .0025:
         raise ValueError("Use a preparation timestep in (0, 0.0025] seconds.")
-    circuit, provenance = assemble(args.movement, args.census, args.inputs)
+    circuit, provenance = assemble(args.movement, args.census, args.inputs,
+                                   hdeltac=getattr(args, "hdeltac", None))
     groups = datasets(args.seed, dict(train=args.train, validation=args.validation, test=args.test))
-    output, record = begin(args.output, "home_vector_prepared_v1", seed=args.seed, dt_s=args.dt)
+    output, record = begin(args.output, "home_vector_prepared_v1", seed=args.seed, dt_s=args.dt,
+                           circuit_variant="hdeltac" if getattr(args, "hdeltac", None) else "core")
     try:
         write_json(output / "circuit.json", circuit.as_dict())
         write_json(output / "trajectories.json", groups)
@@ -121,7 +123,7 @@ def baseline(args):
             return pfn, target
         if mode == "initialized_frozen":
             rates = numpy_rollout(circuit, pfn, dt, initial_coefficients(circuit, 0),
-                                  [.1] * 3, [.1] * 3)
+                                  [.1] * len(circuit.population_types), [.1] * len(circuit.population_types))
             return rates, target
         drive = pfn @ legacy
         rates = np.zeros_like(drive)
@@ -259,6 +261,7 @@ def train(args):
             initial=dict(bias=.1, tau_s=.1, decoder=0., input_edge_coefficient=1.,
                          recurrent_coefficient="seeded Normal(0,0.1), shared within each type pair"),
             state="zero at initialization only; full-trajectory BPTT; no slow state",
+            population_types=list(circuit.population_types),
             normalization="counts / mean projection input across all selected receivers",
             numerical_guard_max_rate=1e6, dtype="float32", dt_s=task["dt_s"],
             length_scale_mm=task["length_scale_mm"]))
@@ -355,6 +358,7 @@ def main(argv=None):
     prep.add_argument("--movement", default="results/pfn-hdeltab-movement-groupnorm-pfnd6-v1.0")
     prep.add_argument("--census", default="results/hdeltab-extension-census-final-20261024")
     prep.add_argument("--inputs", default="results/vdeltae-inputs-live-20261024")
+    prep.add_argument("--hdeltac", help="Verified bounded hDeltaC anatomy bundle; omitted keeps the original core")
     prep.add_argument("--seed", type=int, default=20261030)
     prep.add_argument("--dt", type=float, default=.0025)
     for split, count in [("train", 1024), ("validation", 128), ("test", 256)]:

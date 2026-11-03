@@ -4,9 +4,6 @@ import numpy as np
 import torch
 from torch import nn
 
-from .data import TYPES
-
-
 from .dynamics import initial_coefficients, numpy_rollout
 
 
@@ -17,14 +14,16 @@ class HomeVectorNetwork(nn.Module):
         super().__init__()
         self.input_size, self.size = len(circuit.input_ids), len(circuit.dynamic_ids)
         self.recurrence = recurrence
-        self.register_buffer("type_index", torch.tensor([TYPES.index(t) for t in circuit.dynamic_types]))
+        self.population_types = circuit.population_types
+        self.register_buffer("type_index", torch.tensor([
+            self.population_types.index(t) for t in circuit.dynamic_types]))
         self.register_buffer("pre", torch.tensor([e["pre"] for e in circuit.edges], dtype=torch.long))
         self.register_buffer("post", torch.tensor([e["post"] for e in circuit.edges], dtype=torch.long))
         self.register_buffer("counts", torch.tensor([e["contacts"] / e["denominator"] for e in circuit.edges], dtype=dtype))
         self.register_buffer("a_initial", torch.tensor(initial_coefficients(circuit, seed), dtype=dtype))
         self.a = nn.Parameter(self.a_initial.clone())
-        self.bias = nn.Parameter(torch.full((3,), .1, dtype=dtype))
-        self.tau = nn.Parameter(torch.full((3,), .1, dtype=dtype))
+        self.bias = nn.Parameter(torch.full((len(self.population_types),), .1, dtype=dtype))
+        self.tau = nn.Parameter(torch.full((len(self.population_types),), .1, dtype=dtype))
         self.D = nn.Parameter(torch.zeros(2, self.size, dtype=dtype))
         self.d = nn.Parameter(torch.zeros(2, dtype=dtype))
 

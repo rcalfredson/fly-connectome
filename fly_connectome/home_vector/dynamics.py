@@ -2,8 +2,6 @@
 
 import numpy as np
 
-from .data import TYPES
-
 
 def initial_coefficients(circuit, seed):
     rng = np.random.default_rng(seed)
@@ -20,7 +18,7 @@ def initial_coefficients(circuit, seed):
 def numpy_rollout(circuit, pfn, dt, a, bias, tau, recurrence=True):
     """Convenient frozen baseline; RateNetwork remains the independent reference."""
     n_input, size = len(circuit.input_ids), len(circuit.dynamic_ids)
-    types = np.array([TYPES.index(t) for t in circuit.dynamic_types])
+    types = np.array([circuit.population_types.index(t) for t in circuit.dynamic_types])
     weights = np.zeros((n_input + size, size))
     for value, edge in zip(a, circuit.edges):
         if recurrence or edge["pre"] < n_input:
