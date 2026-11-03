@@ -1267,6 +1267,10 @@ The [hDeltaC iteration guide](docs/cx_home_vector_hdeltac_iteration.md) document
 the optional 65-neuron dynamic circuit, bounded anatomical extraction, verified
 connection counts and commands for training with the unchanged PFN encoding.
 
+The [hDeltaC failure comparison](docs/cx_home_vector_hdeltac_failure_comparison.md)
+quantifies short-range improvements and long-path saturation, with paired
+figures, CPU state diagnostics and controlled follow-up experiments.
+
 ## Tests
 
 ```bash

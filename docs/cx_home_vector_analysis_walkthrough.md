@@ -1,5 +1,10 @@
 # Replaying the first home-vector pilot analyses
 
+For matched original-versus-hDeltaC failure metrics and overlays, see the
+[comparison report](cx_home_vector_hdeltac_failure_comparison.md), which
+documents the additional `analysis.compare` command and its exploratory
+threshold definitions.
+
 These commands reproduce the analyses supporting the
 [pilot interpretation](cx_home_vector_first_training_interpretation.md),
 [home-vector claim assessment](cx_home_vector_claim_assessment.md), and

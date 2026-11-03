@@ -5,6 +5,12 @@ population to the existing hDeltaB/vDeltaE/hDeltaG model. The original core
 remains the default. At that date, engineering checks had passed; a full trained
 hDeltaC experiment had not yet been run.
 
+**Status update, 3 November 2026:** The first full hDeltaC training run has now
+completed 2,000 optimization updates. The [comparison report](cx_home_vector_hdeltac_failure_comparison.md)
+and [unified companion table](cx_home_vector_hdeltac_comparison_table.md)
+document its results against the original model. The setup and engineering
+checks below describe the original 1 November implementation.
+
 ## What changes
 
 | Quantity | Original core | With hDeltaC |
