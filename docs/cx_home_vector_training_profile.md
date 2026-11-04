@@ -14,6 +14,10 @@ The [padding experiment](cx_home_vector_padding.md) adds optional length-grouped
 execution and reports fresh padded comparisons. It reduces padded slots but
 was slower on the tested batches; padded execution remains the default.
 
+The [compilation experiment](cx_home_vector_compilation.md) adds an optional
+`--compile-block 32` profiling path, separating first-use compilation from
+warmed recurrent-block execution. The scientific trainer remains eager.
+
 ## Run
 
 From the repository root in the PyTorch 2.8 environment:

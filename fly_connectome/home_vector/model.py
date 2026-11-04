@@ -9,6 +9,16 @@ from .dynamics import initial_coefficients, numpy_rollout
 LOSS_WEIGHTS = dict(activity=1e-5, edge_prior=1e-4, decoder=1e-5)
 
 
+def recurrent_block(state, drives, recurrent_weight, bias, alpha):
+    """Bounded tensor-only recurrence; return every new state for full BPTT."""
+    states = []
+    for drive in drives:
+        target = torch.relu(bias + drive + state @ recurrent_weight)
+        state = state + alpha * (target - state)
+        states.append(state)
+    return state, torch.stack(states, dim=1)
+
+
 class HomeVectorNetwork(nn.Module):
     """Only PFN traces enter forward(); geometric targets enter the loss outside."""
 
@@ -28,6 +38,21 @@ class HomeVectorNetwork(nn.Module):
         self.tau = nn.Parameter(torch.full((len(self.population_types),), .1, dtype=dtype))
         self.D = nn.Parameter(torch.zeros(2, self.size, dtype=dtype))
         self.d = nn.Parameter(torch.zeros(2, dtype=dtype))
+        self._compiled_block = None
+        self._block_steps = 32
+
+    def compile_recurrence(self, block_steps=32, backend="inductor"):
+        """Opt in without changing checkpoint keys or truncating gradients.
+
+        Compilation is lazy: first forward/backward use includes startup cost.
+        Checks, input projection, decoder, loss and optimizer remain eager.
+        """
+        if not isinstance(block_steps, int) or isinstance(block_steps, bool) or block_steps < 1:
+            raise ValueError("Require a positive integer block size.")
+        self._block_steps = block_steps
+        self._compiled_block = torch.compile(recurrent_block, backend=backend,
+                                             fullgraph=True, dynamic=False)
+        return self
 
     def weights(self):
         effective = self.a * self.counts
@@ -53,6 +78,26 @@ class HomeVectorNetwork(nn.Module):
         input_steps = input_drive.unbind(dim=1)
         recurrent_weight = weight[self.input_size:]
         alpha = -torch.expm1(-dt / self.tau[self.type_index])
+        if self._compiled_block is not None:
+            chunks = []
+            boundaries = [0]
+            if reset_at is not None and 0 < reset_at < pfn.shape[1]:
+                boundaries.append(reset_at)
+            boundaries.append(pfn.shape[1])
+            bias = self.bias[self.type_index]
+            for start, end in zip(boundaries, boundaries[1:]):
+                if start == reset_at:
+                    state = torch.zeros_like(state)
+                chunks.append(state.unsqueeze(1))
+                for n in range(start, end - 1, self._block_steps):
+                    drives = input_steps[n:min(n + self._block_steps, end - 1)]
+                    # Keep short tails eager rather than compiling a new graph
+                    # for every possible remainder length.
+                    block = self._compiled_block if len(drives) == self._block_steps else recurrent_block
+                    state, new_states = block(state, drives, recurrent_weight, bias, alpha)
+                    chunks.append(new_states)
+            rates = torch.cat(chunks, dim=1)
+            return rates @ self.D.T + self.d, rates
         states = []
         for n in range(pfn.shape[1]):
             if n == reset_at:

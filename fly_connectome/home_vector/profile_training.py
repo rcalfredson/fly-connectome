@@ -46,6 +46,8 @@ def run_pass(circuit, groups, task, args, batches, output, label, segmented=Fals
     from .training_batches import backward_grouped
     torch.manual_seed(args.seed)
     network = HomeVectorNetwork(circuit, args.seed).to(args.device)
+    if getattr(args, "compile_block", 0):
+        network.compile_recurrence(args.compile_block)
     optimizer = torch.optim.Adam(network.parameters(), lr=.001)
     cuda = args.device == "cuda"
     synchronize = torch.cuda.synchronize if cuda else lambda: None
@@ -162,6 +164,8 @@ def operator_trace(circuit, groups, task, args, batches, output):
 def profile_training(args):
     import torch
     batching, length_ratio = getattr(args, "batching", "padded"), getattr(args, "length_ratio", 2.)
+    if getattr(args, "compile_block", 0) < 0:
+        raise ValueError("Compiled block size must be nonnegative (0 means eager).")
     if batching not in ("padded", "length-groups") or not np.isfinite(length_ratio) or length_ratio < 1:
         raise ValueError("Require padded/length-groups batching and finite length ratio >=1.")
     if batching != "padded" and args.trace_seconds:
@@ -186,7 +190,7 @@ def profile_training(args):
         source_manifest_sha256=digest(source / "manifest.json"), seed=args.seed,
         updates=args.updates, warmup=args.warmup, batch_size=args.batch_size,
         device=args.device, threads=args.threads, trace_seconds=args.trace_seconds,
-        batching=batching, length_ratio=length_ratio)
+        batching=batching, length_ratio=length_ratio, compile_block=getattr(args, "compile_block", 0))
     record.update(torch=torch.__version__, cuda_version=torch.version.cuda,
                   device_name=torch.cuda.get_device_name() if args.device == "cuda" else "CPU",
                   source_sha256=hashes, scientific_training=False, profiling_optimizer_updates=True)
@@ -237,6 +241,8 @@ def main(argv=None):
     parser.add_argument("--warmup", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--compile-block", type=int, default=0,
+                        help="Experimental compiled recurrence block size; 0 keeps eager execution. First use includes compilation.")
     parser.add_argument("--batching", choices=["padded", "length-groups"], default="padded")
     parser.add_argument("--length-ratio", type=float, default=2.)
     parser.add_argument("--trace-seconds", type=float, default=0,
