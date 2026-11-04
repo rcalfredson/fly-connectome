@@ -157,3 +157,6 @@ python -m pytest -q tests/test_home_vector_gradient_assembly.py
 
 The next separate implementation candidate is avoiding work on padded tails
 while preserving the same sampled trajectories and combined gradient.
+The subsequent [batch-scaling experiment](cx_home_vector_batch_scaling.md)
+also investigates CPU/GPU throughput with a freestanding toy and a larger-batch
+actual-model check; changing batch size is a separate training choice.
