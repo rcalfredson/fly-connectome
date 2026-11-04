@@ -45,6 +45,10 @@ class HomeVectorNetwork(nn.Module):
             raise ValueError("Initial state has wrong shape.")
         weight = self.weights()
         input_drive = pfn @ weight[:self.input_size]
+        # Expose time slices together: unbind's backward assembles their
+        # gradients once. Repeated input_drive[:, n] selections each construct
+        # a full batch/time/neuron gradient buffer during backpropagation.
+        input_steps = input_drive.unbind(dim=1)
         recurrent_weight = weight[self.input_size:]
         alpha = -torch.expm1(-dt / self.tau[self.type_index])
         states = []
@@ -53,7 +57,7 @@ class HomeVectorNetwork(nn.Module):
                 state = torch.zeros_like(state)
             states.append(state)
             if n + 1 < pfn.shape[1]:
-                target = torch.relu(self.bias[self.type_index] + input_drive[:, n] + state @ recurrent_weight)
+                target = torch.relu(self.bias[self.type_index] + input_steps[n] + state @ recurrent_weight)
                 state = state + alpha * (target - state)
         rates = torch.stack(states, dim=1)
         return rates @ self.D.T + self.d, rates

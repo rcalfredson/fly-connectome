@@ -5,6 +5,11 @@ does not alter the trainer, model, dataset, time step, gradient history or loss,
 and does not produce a selected scientific checkpoint. Output directories
 must be fresh and separate from the verified prepared input bundle.
 
+The subsequent [gradient-assembly optimization](cx_home_vector_gradient_assembly.md)
+implements the first targeted change, with a freestanding toy example,
+equivalence checks and matched before/after measurements. The original
+measurements below remain the pre-optimization reference.
+
 ## Run
 
 From the repository root in the PyTorch 2.8 environment:

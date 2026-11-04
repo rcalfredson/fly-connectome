@@ -84,7 +84,10 @@ already completed at `results/cx-home-vector-hdeltac-long-benchmark-seed0-202611
 it averaged 28.35 seconds per update over three updates, compared with 2.14
 seconds in the earlier hDeltaC benchmark. At that observed average, 2,000
 updates would take about 15.7 hours before validation and final evaluation.
-This short benchmark is not a reliable full-run prediction. Full-trajectory
+These are pre-optimization measurements; the
+[gradient-assembly change](cx_home_vector_gradient_assembly.md) subsequently
+reduced the measured GPU update average to 6.81 seconds. Neither short
+benchmark is a reliable full-run prediction. Full-trajectory
 backpropagation through 64 seconds is substantially larger than the old
 short-path workload. To repeat the GPU check, use a small,
 explicitly unselected benchmark:
