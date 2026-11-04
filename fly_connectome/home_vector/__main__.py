@@ -227,6 +227,12 @@ def evaluate(network, circuit, records, dt, device, scale):
 def train(args):
     import torch
     from .model import HomeVectorNetwork, objective
+    from .training_batches import backward_grouped
+
+    batching = getattr(args, "batching", "padded")
+    length_ratio = getattr(args, "length_ratio", 2.)
+    if batching not in ("padded", "length-groups") or not np.isfinite(length_ratio) or length_ratio < 1:
+        raise ValueError("Require padded/length-groups batching and finite length ratio >=1.")
 
     if (args.updates < 1 or args.batch_size < 1 or args.max_seconds <= 0
             or args.validate_every < 1 or args.threads < 1 or not np.isfinite(args.max_seconds)):
@@ -246,7 +252,8 @@ def train(args):
         source_manifest_sha256=digest(Path(args.source) / "manifest.json"),
         seed=args.seed, rewire_seed=args.rewire_seed, recurrence=not args.no_recurrence,
         updates=args.updates, batch_size=args.batch_size, max_seconds=args.max_seconds,
-        device=args.device, threads=args.threads, benchmark=args.benchmark)
+        device=args.device, threads=args.threads, benchmark=args.benchmark,
+        batching=batching, length_ratio=length_ratio)
     record.update(torch=torch.__version__, parameter_count=sum(p.numel() for p in network.parameters()))
     write_json(output / "manifest.json", record)
     try:
@@ -255,6 +262,8 @@ def train(args):
         write_json(output / "training_config.json", dict(
             optimizer="Adam", learning_rate=.001, betas=[.9, .999], eps=1e-8,
             gradient_norm_clip=1., validation_every=args.validate_every,
+            batching=dict(mode=batching, max_length_ratio=length_ratio,
+                          sampling="Uniform original batch; group gradients weighted by trajectory count; one optimizer step"),
             loss=dict(prediction="equal-trajectory mean of squared Cartesian error / L^2",
                       activity=1e-5, edge_initialization_prior=1e-4, decoder_weights=1e-5),
             bounds=dict(edge_coefficient=[-5, 5], bias=[-2, 2], tau_s=[.05, .5]),
@@ -272,19 +281,27 @@ def train(args):
             if update and time.monotonic() - started >= args.max_seconds:
                 break
             selected = [groups["train"][i] for i in rng.integers(0, len(groups["train"]), args.batch_size)]
-            x, target, mask = batch(circuit, selected, task["dt_s"], args.device, network.a.dtype)
-            optimizer.zero_grad(set_to_none=True)
-            prediction, rates = network(x, task["dt_s"])
-            loss, terms = objective(prediction, target, rates, mask, task["length_scale_mm"], network)
-            if not torch.isfinite(loss) or not torch.isfinite(rates).all() or rates.max() > 1e6:
-                raise ValueError("Training exceeded numerical guard.")
-            loss.backward()
+            grouping = None
+            if batching == "padded":
+                x, target, mask = batch(circuit, selected, task["dt_s"], args.device, network.a.dtype)
+                optimizer.zero_grad(set_to_none=True)
+                prediction, rates = network(x, task["dt_s"])
+                loss, terms = objective(prediction, target, rates, mask, task["length_scale_mm"], network)
+                if not torch.isfinite(loss) or not torch.isfinite(rates).all() or rates.max() > 1e6:
+                    raise ValueError("Training exceeded numerical guard.")
+                loss.backward()
+            else:
+                optimizer.zero_grad(set_to_none=True)
+                loss, terms, grouping = backward_grouped(network, circuit, selected, task["dt_s"],
+                    args.device, task["length_scale_mm"], length_ratio)
             norm = torch.nn.utils.clip_grad_norm_(network.parameters(), 1., error_if_nonfinite=True)
             optimizer.step()
             network.project_parameters()
             completed = update + 1
             row = dict(update=completed, elapsed_s=time.monotonic() - started, loss=float(loss.detach()),
                        gradient_norm=float(norm), **{k: float(v.detach()) for k, v in terms.items()})
+            if grouping is not None:
+                row["grouping"] = grouping
             # Benchmarks time updates only; their checkpoint is explicitly unselected.
             validate = not args.benchmark and (completed % args.validate_every == 0 or completed == args.updates)
             if validate:
@@ -382,6 +399,8 @@ def main(argv=None):
     fit.add_argument("--threads", type=int, default=1)
     fit.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     fit.add_argument("--benchmark", action="store_true")
+    fit.add_argument("--batching", choices=["padded", "length-groups"], default="padded")
+    fit.add_argument("--length-ratio", type=float, default=2., help="Maximum sample-length ratio within a subgroup")
     fit.set_defaults(action=train)
     verify = sub.add_parser("verify")
     verify.add_argument("source")

@@ -92,6 +92,11 @@ backpropagation through 64 seconds is substantially larger than the old
 short-path workload. To repeat the GPU check, use a small,
 explicitly unselected benchmark:
 
+The subsequent [padding experiment](cx_home_vector_padding.md) did not improve
+runtime with the first within-batch grouping strategy. Keep the default
+`--batching padded` for the benchmark and training commands below; grouping
+is an explicit experimental option, not a recommended speedup for batch 8.
+
 ```bash
 python -m fly_connectome.home_vector train \
   results/cx-home-vector-hdeltac-long-data-20261104 \

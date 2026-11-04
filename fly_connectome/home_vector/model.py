@@ -6,6 +6,8 @@ from torch import nn
 
 from .dynamics import initial_coefficients, numpy_rollout
 
+LOSS_WEIGHTS = dict(activity=1e-5, edge_prior=1e-4, decoder=1e-5)
+
 
 class HomeVectorNetwork(nn.Module):
     """Only PFN traces enter forward(); geometric targets enter the loss outside."""
@@ -78,5 +80,6 @@ def objective(prediction, target, rates, mask, scale, network):
     activity = ((rates.square().mean(-1) * mask).sum(1) / mask.sum(1)).mean()
     prior = (network.a - network.a_initial).square().mean()
     decoder = network.D.square().mean()
-    total = task + 1e-5 * activity + 1e-4 * prior + 1e-5 * decoder
+    total = (task + LOSS_WEIGHTS["activity"] * activity + LOSS_WEIGHTS["edge_prior"] * prior
+             + LOSS_WEIGHTS["decoder"] * decoder)
     return total, dict(task=task, activity=activity, edge_prior=prior, decoder=decoder)

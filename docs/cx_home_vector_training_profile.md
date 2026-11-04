@@ -10,6 +10,10 @@ implements the first targeted change, with a freestanding toy example,
 equivalence checks and matched before/after measurements. The original
 measurements below remain the pre-optimization reference.
 
+The [padding experiment](cx_home_vector_padding.md) adds optional length-grouped
+execution and reports fresh padded comparisons. It reduces padded slots but
+was slower on the tested batches; padded execution remains the default.
+
 ## Run
 
 From the repository root in the PyTorch 2.8 environment:

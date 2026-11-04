@@ -32,7 +32,7 @@ def phase(name, timings, synchronize, segmented, annotate):
         yield
     if segmented:
         synchronize()
-    timings[name] = time.perf_counter() - start
+    timings[name] = timings.get(name, 0.) + (time.perf_counter() - start)
 
 
 def run_pass(circuit, groups, task, args, batches, output, label, segmented=False, trace_steps=None):
@@ -43,12 +43,14 @@ def run_pass(circuit, groups, task, args, batches, output, label, segmented=Fals
     """
     import torch
     from .model import HomeVectorNetwork, objective
+    from .training_batches import backward_grouped
     torch.manual_seed(args.seed)
     network = HomeVectorNetwork(circuit, args.seed).to(args.device)
     optimizer = torch.optim.Adam(network.parameters(), lr=.001)
     cuda = args.device == "cuda"
     synchronize = torch.cuda.synchronize if cuda else lambda: None
     history = []
+    batching = getattr(args, "batching", "padded")
     for update, indices in enumerate(batches, 1):
         selected = [groups["train"][i] for i in indices]
         metadata = batch_description(indices, selected, task["dt_s"])
@@ -61,20 +63,27 @@ def run_pass(circuit, groups, task, args, batches, output, label, segmented=Fals
         def section(name):
             return phase(name, times, synchronize, segmented, trace_steps is not None)
 
-        with section("batch_preparation_and_transfer"):
-            x, target, mask = batch(circuit, selected, task["dt_s"], args.device, network.a.dtype)
-            if trace_steps is not None:
-                x, target, mask = x[:, :trace_steps], target[:, :trace_steps], mask[:, :trace_steps]
-        with section("zero_grad"):
-            optimizer.zero_grad(set_to_none=True)
-        with section("forward"):
-            prediction, rates = network(x, task["dt_s"])
-        with section("objective_and_guard"):
-            loss, terms = objective(prediction, target, rates, mask, task["length_scale_mm"], network)
-            if not torch.isfinite(loss) or not torch.isfinite(rates).all() or rates.max() > 1e6:
-                raise ValueError("Profiling update exceeded the training numerical guard.")
-        with section("backward"):
-            loss.backward()
+        grouping = None
+        if batching == "padded":
+            with section("batch_preparation_and_transfer"):
+                x, target, mask = batch(circuit, selected, task["dt_s"], args.device, network.a.dtype)
+                if trace_steps is not None:
+                    x, target, mask = x[:, :trace_steps], target[:, :trace_steps], mask[:, :trace_steps]
+            with section("zero_grad"):
+                optimizer.zero_grad(set_to_none=True)
+            with section("forward"):
+                prediction, rates = network(x, task["dt_s"])
+            with section("objective_and_guard"):
+                loss, terms = objective(prediction, target, rates, mask, task["length_scale_mm"], network)
+                if not torch.isfinite(loss) or not torch.isfinite(rates).all() or rates.max() > 1e6:
+                    raise ValueError("Profiling update exceeded the training numerical guard.")
+            with section("backward"):
+                loss.backward()
+        else:
+            with section("zero_grad"):
+                optimizer.zero_grad(set_to_none=True)
+            loss, terms, grouping = backward_grouped(network, circuit, selected, task["dt_s"], args.device,
+                task["length_scale_mm"], getattr(args, "length_ratio", 2.), section)
         with section("gradient_clipping"):
             norm = torch.nn.utils.clip_grad_norm_(network.parameters(), 1., error_if_nonfinite=True)
         with section("optimizer"):
@@ -88,6 +97,8 @@ def run_pass(circuit, groups, task, args, batches, output, label, segmented=Fals
         wall = time.perf_counter() - started
         row = dict(update=update, measured=update > args.warmup, wall_s=wall,
                    batch=metadata, **values)
+        if grouping is not None:
+            row["grouping"] = grouping
         if trace_steps is not None:
             row["trace_steps"] = int(x.shape[1])
         if segmented:
@@ -150,6 +161,11 @@ def operator_trace(circuit, groups, task, args, batches, output):
 
 def profile_training(args):
     import torch
+    batching, length_ratio = getattr(args, "batching", "padded"), getattr(args, "length_ratio", 2.)
+    if batching not in ("padded", "length-groups") or not np.isfinite(length_ratio) or length_ratio < 1:
+        raise ValueError("Require padded/length-groups batching and finite length ratio >=1.")
+    if batching != "padded" and args.trace_seconds:
+        raise ValueError("Operator tracing currently requires padded batching; grouped timings use full trajectories.")
     if (args.updates < 1 or args.warmup < 0 or args.batch_size < 1 or args.threads < 1
             or not np.isfinite(args.trace_seconds) or not 0 <= args.trace_seconds <= 1):
         raise ValueError("Require positive updates/batch/threads, nonnegative warmup, trace_seconds in [0,1].")
@@ -169,7 +185,8 @@ def profile_training(args):
     output, record = begin(output, "home_vector_training_profile_v1", source=str(source),
         source_manifest_sha256=digest(source / "manifest.json"), seed=args.seed,
         updates=args.updates, warmup=args.warmup, batch_size=args.batch_size,
-        device=args.device, threads=args.threads, trace_seconds=args.trace_seconds)
+        device=args.device, threads=args.threads, trace_seconds=args.trace_seconds,
+        batching=batching, length_ratio=length_ratio)
     record.update(torch=torch.__version__, cuda_version=torch.version.cuda,
                   device_name=torch.cuda.get_device_name() if args.device == "cuda" else "CPU",
                   source_sha256=hashes, scientific_training=False, profiling_optimizer_updates=True)
@@ -194,6 +211,10 @@ def profile_training(args):
                 trace="Optional instrumented short prefix, fresh model, one batch; cannot estimate full-length update speed from it.",
                 rss="Linux process lifetime peak, cumulative across passes; not per-update CPU allocation.",
                 scope="Disposable optimizer updates; no model-selection or scientific checkpoint."))
+        measured = [r for r in baseline[0] if r["measured"]]
+        executed = sum(r.get("grouping", {}).get("executed_steps", r["batch"]["padded_steps"]) for r in measured)
+        report["executed_padding_fraction"] = float(1 - sum(r["batch"]["valid_steps"] for r in measured) / executed)
+        report["avoided_slot_fraction"] = float(1 - executed / sum(r["batch"]["padded_steps"] for r in measured))
         write_json(output / "profile.json", report)
         if args.trace_seconds:
             operator_trace(circuit, groups, task, args, batches, output)
@@ -216,6 +237,8 @@ def main(argv=None):
     parser.add_argument("--warmup", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--batching", choices=["padded", "length-groups"], default="padded")
+    parser.add_argument("--length-ratio", type=float, default=2.)
     parser.add_argument("--trace-seconds", type=float, default=0,
                         help="Optional short operator trace, <=1 s; timing passes retain full trajectories")
     args = parser.parse_args(argv)

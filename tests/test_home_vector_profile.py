@@ -28,12 +28,14 @@ def arguments(source, output):
                               warmup=0, batch_size=2, threads=1, device="cpu", trace_seconds=0.)
 
 
-def test_profile_matches_canonical_trainer_loss_gradients_and_optimizer(tmp_path):
+@pytest.mark.parametrize("batching", ["padded", "length-groups"])
+def test_profile_matches_canonical_trainer_loss_gradients_and_optimizer(tmp_path, batching):
     torch = pytest.importorskip("torch")
     from fly_connectome.home_vector.__main__ import train
     source = prepared(tmp_path / "source")
     hashes = {p.name: digest(p) for p in source.iterdir()}
     args = arguments(source, tmp_path / "profile")
+    args.batching, args.length_ratio = batching, 1.
     result = profile_training(args)
     assert all(v["passed"] for v in result["agreement"].values())
     assert result["baseline_mean_update_s"] > 0
