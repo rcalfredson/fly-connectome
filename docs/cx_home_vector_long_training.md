@@ -1,7 +1,9 @@
 # Training-distribution experiment: longer straight walks
 
-Prepared 4 November 2026. The new data bundle is ready; no training updates or
-GPU benchmarks have been run for this experiment. The model, PFN encoding and
+Prepared 4 November 2026. The new data bundle is ready; the full scientific
+training run has not started. A three-update GPU benchmark has completed;
+[profiling tools](cx_home_vector_training_profile.md) investigate its cost
+before launching the full run. The model, PFN encoding and
 optimizer implementation are unchanged. The comparison is the existing
 hDeltaC short-trained checkpoint versus a newly initialized hDeltaC fit with
 the same seed, trained on an augmented trajectory distribution.
@@ -77,10 +79,14 @@ task back into preparation.
 
 ## Benchmark and train
 
-The already prepared November 4 bundle can be used directly. These commands
-are instructions for the user; they have not been executed. Full-trajectory
+The already prepared November 4 bundle can be used directly. A benchmark has
+already completed at `results/cx-home-vector-hdeltac-long-benchmark-seed0-20261104`;
+it averaged 28.35 seconds per update over three updates, compared with 2.14
+seconds in the earlier hDeltaC benchmark. At that observed average, 2,000
+updates would take about 15.7 hours before validation and final evaluation.
+This short benchmark is not a reliable full-run prediction. Full-trajectory
 backpropagation through 64 seconds is substantially larger than the old
-short-path workload. First check GPU memory and update time with a small,
+short-path workload. To repeat the GPU check, use a small,
 explicitly unselected benchmark:
 
 ```bash
