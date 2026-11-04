@@ -5,6 +5,10 @@ For matched original-versus-hDeltaC failure metrics and overlays, see the
 documents the additional `analysis.compare` command and its exploratory
 threshold definitions.
 
+For the frozen-checkpoint speed, heading and body-direction sweep, see the
+[straight-walk assessment](cx_home_vector_straight_sweep.md), including its
+`analysis.straight` command and time-versus-distance interpretation.
+
 These commands reproduce the analyses supporting the
 [pilot interpretation](cx_home_vector_first_training_interpretation.md),
 [home-vector claim assessment](cx_home_vector_claim_assessment.md), and
