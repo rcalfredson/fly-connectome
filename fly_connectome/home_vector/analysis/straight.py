@@ -134,7 +134,7 @@ def replay(audit, rows, duration):
     return results, prediction, norms, difference
 
 
-def plots(output, rows, predictions, dt):
+def plots(output, rows, predictions, dt, labels=("Original", "+hDeltaC")):
     fig, axes = plt.subplots(2, 2, figsize=(12, 8), layout="constrained")
     colors = plt.get_cmap("tab10")
     speeds = sorted({r["speed_mm_s"] for r in rows})
@@ -146,7 +146,7 @@ def plots(output, rows, predictions, dt):
                      and r["heading_deg"] == 45 and r["body_direction_deg"] == 0 and r["speed_mm_s"] == speed)
             along = prediction[i] @ (-np.ones(2) / np.sqrt(2))
             style = "-" if model == 0 else "--"
-            label = f"{'Original' if model == 0 else '+hDeltaC'}, {speed:g} mm/s"
+            label = f"{labels[model]}, {speed:g} mm/s"
             axes[0, 0].plot(time, along, style, color=colors(j), label=label)
             axes[0, 1].plot(time * speed, along, style, color=colors(j), label=label)
         for family, ax in [("same_world", axes[1, 0]), ("factorial", axes[1, 1])]:
@@ -156,7 +156,7 @@ def plots(output, rows, predictions, dt):
             endpoint = prediction[selected, -1].astype(float)
             _, velocity = controls_and_velocity([rows[i] for i in selected])
             ax.plot(x, np.linalg.norm(endpoint + time[-1] * velocity, axis=1), "o-",
-                    label="Original" if model == 0 else "+hDeltaC")
+                    label=labels[model])
     axes[0, 0].set(title="Forward walking, heading 45°", xlabel="Elapsed time (s)", ylabel="Along-track prediction (mm)")
     axes[0, 1].set(title="Same traces against travelled distance", xlabel="True distance (mm)", ylabel="Along-track prediction (mm)")
     axes[0, 1].plot([0, max(speeds) * time[-1]], [0, max(speeds) * time[-1]], "k:", label="Ideal")
@@ -170,12 +170,29 @@ def plots(output, rows, predictions, dt):
     plt.close(fig)
 
 
+def validate_comparison(reference, current, allow_task_differences):
+    if allow_task_differences:
+        if (digest(reference.run / "circuit.json") != digest(current.run / "circuit.json")
+                or reference.task["dt_s"] != current.task["dt_s"]):
+            raise ValueError("Different-task comparison requires identical circuits and time steps.")
+    else:
+        for name in ("task.json", "trajectories.json"):
+            if digest(reference.source / name) != digest(current.source / name):
+                raise ValueError("Require matched task and trajectory bundles.")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for option in ("run", "source", "reference-run", "reference-source", "output"):
         parser.add_argument(f"--{option}", required=True)
     parser.add_argument("--duration", type=float, default=64.)
     parser.add_argument("--speeds", type=float, nargs="+", default=[.25, .5, 1., 2.])
+    parser.add_argument("--reference-label", default="Original")
+    parser.add_argument("--label", default="+hDeltaC")
+    parser.add_argument("--allow-task-differences", action="store_true",
+                        help="Compare training distributions; requires identical circuits and time steps")
+    parser.add_argument("--sample-times", type=float, nargs="+",
+                        help="Also summarize prefixes at these times, without resetting or fitting")
     args = parser.parse_args(argv)
     if (not np.isfinite(args.duration) or args.duration < 10 or
             not np.isfinite(args.speeds).all() or min(args.speeds) <= 0 or len(set(args.speeds)) != len(args.speeds)):
@@ -184,25 +201,35 @@ def main(argv=None):
     reference_args = copy.copy(args)
     reference_args.run, reference_args.source = args.reference_run, args.reference_source
     reference, current = Audit(reference_args), Audit(args)
-    for name in ("task.json", "trajectories.json"):
-        if digest(reference.source / name) != digest(current.source / name):
-            raise ValueError("Require matched task and trajectory bundles.")
+    validate_comparison(reference, current, args.allow_task_differences)
     dt = current.task["dt_s"]
     if not np.isclose(args.duration / dt, round(args.duration / dt), rtol=0, atol=1e-7):
         parser.error("Duration must fall on the task time grid.")
+    times = args.sample_times or []
+    if any(not np.isfinite(t) or t < 10 or t > args.duration or
+           not np.isclose(t / dt, round(t / dt), rtol=0, atol=1e-7) for t in times):
+        parser.error("Sample times must be >=10 s, <=duration, and on the task time grid.")
     rows = conditions(args.speeds, range(0, 360, 45), [0, 45, 90, 127, 135, 180, 225, 233, 270, 315])
     with current:
         current.record["reference_source_sha256"] = reference.hashes
         current.record["backend"] = "NumPy float32 CPU; trained Torch weights; unchanged model update"
         arrays, report, table = [], {}, []
-        for label, audit in [("original", reference), ("hdeltac", current)]:
+        for label, audit in [("reference", reference), ("current", current)]:
             print(f"Replaying {label}: {len(rows)} straight trajectories", flush=True)
             results, prediction, norms, difference = replay(audit, rows, args.duration)
             report[label] = dict(saved_long_replay_max_abs_error_mm=difference, trajectories=results)
             table.extend(dict(model=label, **r) for r in results)
+            _, velocity = controls_and_velocity(rows)
+            report[label]["prefix_summaries"] = {}
+            for time in sorted(set(times) - {args.duration}):
+                prefix = [summary(row, prediction[i, :round(time / dt) + 1].astype(float), velocity[i], dt)
+                          for i, row in enumerate(rows)]
+                report[label]["prefix_summaries"][str(time)] = prefix
+                table.extend(dict(model=label, **r) for r in prefix)
             arrays.append(prediction)
             np.savez_compressed(current.out / f"{label}_traces.npz", prediction=prediction, state_norm=norms)
         report["conditions"] = rows
+        report["model_labels"] = dict(reference=args.reference_label, current=args.label)
         report["definitions"] = dict(
             thresholds="First >=0.5 s breach beyond 2 mm, at 10%; null means not observed within the trial, not indefinitely accurate.",
             angle="Body direction is atan2(right, forward); heading + body direction gives world movement direction.",
@@ -214,7 +241,7 @@ def main(argv=None):
             writer = csv.DictWriter(stream, fieldnames=list(table[0]))
             writer.writeheader()
             writer.writerows(table)
-        plots(current.out, rows, arrays, dt)
+        plots(current.out, rows, arrays, dt, labels=(args.reference_label, args.label))
         after = {str(p): digest(p) for folder in (reference.run, reference.source)
                  for p in folder.iterdir() if p.is_file()}
         if after != reference.hashes:
