@@ -231,6 +231,9 @@ def train(args):
 
     batching = getattr(args, "batching", "padded")
     length_ratio = getattr(args, "length_ratio", 2.)
+    compile_block = getattr(args, "compile_block", 0)
+    if not isinstance(compile_block, int) or isinstance(compile_block, bool) or compile_block < 0:
+        raise ValueError("Require a nonnegative integer compile block size (0 means eager).")
     if batching not in ("padded", "length-groups") or not np.isfinite(length_ratio) or length_ratio < 1:
         raise ValueError("Require padded/length-groups batching and finite length ratio >=1.")
 
@@ -247,13 +250,15 @@ def train(args):
     torch.manual_seed(args.seed)
     rng = np.random.default_rng(args.seed)
     network = HomeVectorNetwork(circuit, args.seed, recurrence=not args.no_recurrence).to(args.device)
+    if compile_block:
+        network.compile_recurrence(compile_block)
     optimizer = torch.optim.Adam(network.parameters(), lr=.001)
     output, record = begin(args.output, "home_vector_training_v1", source=str(Path(args.source).resolve()),
         source_manifest_sha256=digest(Path(args.source) / "manifest.json"),
         seed=args.seed, rewire_seed=args.rewire_seed, recurrence=not args.no_recurrence,
         updates=args.updates, batch_size=args.batch_size, max_seconds=args.max_seconds,
         device=args.device, threads=args.threads, benchmark=args.benchmark,
-        batching=batching, length_ratio=length_ratio)
+        batching=batching, length_ratio=length_ratio, compile_block=compile_block)
     record.update(torch=torch.__version__, parameter_count=sum(p.numel() for p in network.parameters()))
     write_json(output / "manifest.json", record)
     try:
@@ -261,6 +266,9 @@ def train(args):
         write_json(output / "rewire_diagnostics.json", diagnostics)
         write_json(output / "training_config.json", dict(
             optimizer="Adam", learning_rate=.001, betas=[.9, .999], eps=1e-8,
+            compilation=dict(enabled=bool(compile_block), block_steps=compile_block or None,
+                             backend="inductor" if compile_block else None,
+                             evaluation="eager", input_layout="time-major contiguous" if compile_block else "batch-major"),
             gradient_norm_clip=1., validation_every=args.validate_every,
             batching=dict(mode=batching, max_length_ratio=length_ratio,
                           sampling="Uniform original batch; group gradients weighted by trajectory count; one optimizer step"),
@@ -397,6 +405,8 @@ def main(argv=None):
     fit.add_argument("--max-seconds", type=float, default=7200)
     fit.add_argument("--validate-every", type=int, default=50)
     fit.add_argument("--threads", type=int, default=1)
+    fit.add_argument("--compile-block", type=int, default=0,
+                     help="Compile recurrent blocks of this many steps; 0 keeps eager training. Evaluation stays eager.")
     fit.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     fit.add_argument("--benchmark", action="store_true")
     fit.add_argument("--batching", choices=["padded", "length-groups"], default="padded")

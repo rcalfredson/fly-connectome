@@ -46,6 +46,7 @@ class HomeVectorNetwork(nn.Module):
 
         Compilation is lazy: first forward/backward use includes startup cost.
         Checks, input projection, decoder, loss and optimizer remain eager.
+        No-grad evaluation stays eager to avoid compiling its many shapes.
         """
         if not isinstance(block_steps, int) or isinstance(block_steps, bool) or block_steps < 1:
             raise ValueError("Require a positive integer block size.")
@@ -75,10 +76,17 @@ class HomeVectorNetwork(nn.Module):
         # Expose time slices together: unbind's backward assembles their
         # gradients once. Repeated input_drive[:, n] selections each construct
         # a full batch/time/neuron gradient buffer during backpropagation.
-        input_steps = input_drive.unbind(dim=1)
+        compiled_training = self._compiled_block is not None and torch.is_grad_enabled()
+        if compiled_training:
+            # A time-major contiguous copy gives every [batch, neuron] view
+            # the same stride regardless of total padded sequence length.
+            # Unbind still assembles the drive gradients together once.
+            input_steps = input_drive.transpose(0, 1).contiguous().unbind(dim=0)
+        else:
+            input_steps = input_drive.unbind(dim=1)
         recurrent_weight = weight[self.input_size:]
         alpha = -torch.expm1(-dt / self.tau[self.type_index])
-        if self._compiled_block is not None:
+        if compiled_training:
             chunks = []
             boundaries = [0]
             if reset_at is not None and 0 < reset_at < pfn.shape[1]:
