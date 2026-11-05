@@ -222,7 +222,7 @@ def plot_comparison(audits, arrays, report):
     for key, label in report["model_labels"].items():
         h = report[key]["validation_history"]
         ax.plot([r["update"] for r in h], [r["scaled_mse"] for r in h], label=label)
-    ax.set(xlabel="Training update", ylabel="Validation equal-trajectory MSE / L²", title="Checkpoint-selection objective")
+    ax.set(xlabel="Training update", ylabel="Validation equal-trajectory MSE / L²", title="Historical validation score (unweighted)")
     if not report.get("validation_sets_match", not report["task_differences_allowed"]):
         ax.set_title("Different validation sets: compare trends within each curve")
     ax.grid(alpha=.2)

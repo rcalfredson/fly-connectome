@@ -5,6 +5,11 @@ The [500-update assessment](cx_home_vector_long_u500_assessment.md) includes
 challenge plots, validation/test subset scores and 96/128-second extrapolation.
 Update 500 was selected and passed the numerical convergence gate.
 
+The next controlled intervention is the optional
+[balanced task loss](cx_home_vector_balanced_loss.md), which keeps this dataset
+and model fixed. The original objective remains the trainer default; the
+historical commands and loss description below use that original mode.
+
 Prepared 4 November 2026. The historical preparation and benchmark details
 below are retained for provenance. The circuit and PFN encoding are unchanged;
 execution optimizations and the batch-128 schedule are documented below.

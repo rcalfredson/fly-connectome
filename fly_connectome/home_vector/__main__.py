@@ -228,6 +228,7 @@ def train(args):
     import torch
     from .model import HomeVectorNetwork, objective
     from .training_batches import backward_grouped
+    from .loss_balance import example_weights, loss_plan, trajectory_group, validation_scores
 
     batching = getattr(args, "batching", "padded")
     length_ratio = getattr(args, "length_ratio", 2.)
@@ -241,6 +242,10 @@ def train(args):
             or args.validate_every < 1 or args.threads < 1 or not np.isfinite(args.max_seconds)):
         raise ValueError("Require positive updates, batch size and wall-time cap.")
     circuit, groups, task = load(args.source)
+    loss_mode = getattr(args, "loss_mode", "original")
+    plan = loss_plan(loss_mode, groups["train"], task["dt_s"])
+    if loss_mode == "balanced" and {trajectory_group(r) for r in groups["validation"]} != {"original", "long"}:
+        raise ValueError("Balanced validation requires both original and long groups.")
     diagnostics = None
     if args.rewire_seed is not None:
         circuit, diagnostics = rewire(circuit, args.rewire_seed)
@@ -258,7 +263,7 @@ def train(args):
         seed=args.seed, rewire_seed=args.rewire_seed, recurrence=not args.no_recurrence,
         updates=args.updates, batch_size=args.batch_size, max_seconds=args.max_seconds,
         device=args.device, threads=args.threads, benchmark=args.benchmark,
-        batching=batching, length_ratio=length_ratio, compile_block=compile_block)
+        batching=batching, length_ratio=length_ratio, compile_block=compile_block, loss_mode=loss_mode)
     record.update(torch=torch.__version__, parameter_count=sum(p.numel() for p in network.parameters()))
     write_json(output / "manifest.json", record)
     try:
@@ -272,7 +277,8 @@ def train(args):
             gradient_norm_clip=1., validation_every=args.validate_every,
             batching=dict(mode=batching, max_length_ratio=length_ratio,
                           sampling="Uniform original batch; group gradients weighted by trajectory count; one optimizer step"),
-            loss=dict(prediction="equal-trajectory mean of squared Cartesian error / L^2",
+            loss=dict(prediction="equal-trajectory mean of squared Cartesian error / L^2; optional frozen group weights",
+                      **plan,
                       activity=1e-5, edge_initialization_prior=1e-4, decoder_weights=1e-5),
             bounds=dict(edge_coefficient=[-5, 5], bias=[-2, 2], tau_s=[.05, .5]),
             initial=dict(bias=.1, tau_s=.1, decoder=0., input_edge_coefficient=1.,
@@ -289,25 +295,26 @@ def train(args):
             if update and time.monotonic() - started >= args.max_seconds:
                 break
             selected = [groups["train"][i] for i in rng.integers(0, len(groups["train"]), args.batch_size)]
+            weights = example_weights(selected, plan, network.a)
             grouping = None
             if batching == "padded":
                 x, target, mask = batch(circuit, selected, task["dt_s"], args.device, network.a.dtype)
                 optimizer.zero_grad(set_to_none=True)
                 prediction, rates = network(x, task["dt_s"])
-                loss, terms = objective(prediction, target, rates, mask, task["length_scale_mm"], network)
+                loss, terms = objective(prediction, target, rates, mask, task["length_scale_mm"], network, weights)
                 if not torch.isfinite(loss) or not torch.isfinite(rates).all() or rates.max() > 1e6:
                     raise ValueError("Training exceeded numerical guard.")
                 loss.backward()
             else:
                 optimizer.zero_grad(set_to_none=True)
                 loss, terms, grouping = backward_grouped(network, circuit, selected, task["dt_s"],
-                    args.device, task["length_scale_mm"], length_ratio)
+                    args.device, task["length_scale_mm"], length_ratio, trajectory_weights=weights)
             norm = torch.nn.utils.clip_grad_norm_(network.parameters(), 1., error_if_nonfinite=True)
             optimizer.step()
             network.project_parameters()
             completed = update + 1
             row = dict(update=completed, elapsed_s=time.monotonic() - started, loss=float(loss.detach()),
-                       gradient_norm=float(norm), **{k: float(v.detach()) for k, v in terms.items()})
+                       gradient_norm=float(norm), gradient_clipped=bool(norm > 1.), **{k: float(v.detach()) for k, v in terms.items()})
             if grouping is not None:
                 row["grouping"] = grouping
             # Benchmarks time updates only; their checkpoint is explicitly unselected.
@@ -315,9 +322,9 @@ def train(args):
             if validate:
                 result, _, _, _ = evaluate(network, circuit, groups["validation"], task["dt_s"],
                                            args.device, task["length_scale_mm"])
-                row["validation_scaled_mse"] = result["equal_trajectory_scaled_mse"]
-                if row["validation_scaled_mse"] < best:
-                    best = row["validation_scaled_mse"]
+                row.update(validation_scores(result, groups["validation"], task["length_scale_mm"], plan))
+                if row["validation_selection_score"] < best:
+                    best = row["validation_selection_score"]
                     torch.save(dict(model=network.state_dict(), optimizer=optimizer.state_dict(), update=completed,
                         numpy_rng=rng.bit_generator.state, torch_rng=torch.get_rng_state()), output / "best.pt")
             history.append(row)
@@ -335,7 +342,10 @@ def train(args):
             if not (output / "best.pt").exists():
                 result, _, _, _ = evaluate(network, circuit, groups["validation"], task["dt_s"], args.device,
                                           task["length_scale_mm"])
-                best = result["equal_trajectory_scaled_mse"]
+                scores = validation_scores(result, groups["validation"], task["length_scale_mm"], plan)
+                best = scores["validation_selection_score"]
+                history[-1].update(scores)
+                write_json(output / "history.json", history)
                 torch.save(dict(model=network.state_dict(), optimizer=optimizer.state_dict(), update=completed,
                     numpy_rng=rng.bit_generator.state, torch_rng=torch.get_rng_state()), output / "best.pt")
             checkpoint = torch.load(output / "best.pt", weights_only=False, map_location=args.device)
@@ -360,6 +370,10 @@ def train(args):
             report["numerical_validation"] = dict(state_relative_rms_error=state_error,
                 relative_rmse_change=task_change, passed=bool(state_error < .02 and task_change < .05))
             report["selected_update"] = checkpoint["update"]
+            report["loss_mode"] = loss_mode
+            report["selection"] = validation_scores(report["validation"], groups["validation"],
+                                                     task["length_scale_mm"], plan)
+            report["gradient_clipped_fraction"] = float(np.mean([r["gradient_clipped"] for r in history]))
             report["bounds"] = dict(tau_s=network.tau.detach().cpu().tolist(),
                 bias=network.bias.detach().cpu().tolist(),
                 max_abs_coefficient=float(network.a.detach().abs().max()),
@@ -409,6 +423,8 @@ def main(argv=None):
                      help="Compile recurrent blocks of this many steps; 0 keeps eager training. Evaluation stays eager.")
     fit.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     fit.add_argument("--benchmark", action="store_true")
+    fit.add_argument("--loss-mode", choices=["original", "balanced"], default="original",
+                     help="Task loss: historical equal-trajectory error, or frozen training-energy group weights.")
     fit.add_argument("--batching", choices=["padded", "length-groups"], default="padded")
     fit.add_argument("--length-ratio", type=float, default=2., help="Maximum sample-length ratio within a subgroup")
     fit.set_defaults(action=train)

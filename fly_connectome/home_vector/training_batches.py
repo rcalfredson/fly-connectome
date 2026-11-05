@@ -24,7 +24,8 @@ def length_groups(records, dt, max_ratio=2.):
                         avoided_fraction=1 - executed / padded)
 
 
-def backward_grouped(network, circuit, records, dt, device, scale, max_ratio=2., section=None):
+def backward_grouped(network, circuit, records, dt, device, scale, max_ratio=2., section=None,
+                     trajectory_weights=None):
     """Accumulate one sampled batch's gradient; caller clips/steps exactly once.
 
     Data terms are weighted by subgroup_size / original_batch_size. Parameter
@@ -46,7 +47,8 @@ def backward_grouped(network, circuit, records, dt, device, scale, max_ratio=2.,
         with section("forward"):
             prediction, rates = network(x, dt)
         with section("objective_and_guard"):
-            loss, terms = objective(prediction, target, rates, mask, scale, network)
+            weights = None if trajectory_weights is None else trajectory_weights[positions]
+            loss, terms = objective(prediction, target, rates, mask, scale, network, weights)
             if not torch.isfinite(loss) or not torch.isfinite(rates).all() or rates.max() > 1e6:
                 raise ValueError("Grouped training exceeded the numerical guard.")
             weight = len(positions) / len(records)

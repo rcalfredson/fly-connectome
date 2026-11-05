@@ -124,12 +124,18 @@ class HomeVectorNetwork(nn.Module):
             self.tau.clamp_(.05, .5)
 
 
-def objective(prediction, target, rates, mask, scale, network):
-    """Equal trajectory weighting, including penalties on valid rate samples."""
+def objective(prediction, target, rates, mask, scale, network, trajectory_weights=None):
+    """Mean trajectory loss; optional frozen weights affect only prediction error."""
     if not np.isfinite(scale) or scale <= 0 or mask.ndim != 2 or not (mask.sum(1) > 0).all():
         raise ValueError("Require positive training-only scale and nonempty trajectory masks.")
     error = ((prediction - target) / scale).square().sum(-1)
-    task = ((error * mask).sum(1) / mask.sum(1)).mean()
+    per_trajectory = (error * mask).sum(1) / mask.sum(1)
+    if trajectory_weights is not None:
+        if (trajectory_weights.shape != per_trajectory.shape or trajectory_weights.requires_grad
+                or not torch.isfinite(trajectory_weights).all() or not (trajectory_weights > 0).all()):
+            raise ValueError("Require one finite positive frozen weight per trajectory.")
+        per_trajectory = per_trajectory * trajectory_weights
+    task = per_trajectory.mean()
     activity = ((rates.square().mean(-1) * mask).sum(1) / mask.sum(1)).mean()
     prior = (network.a - network.a_initial).square().mean()
     decoder = network.D.square().mean()
