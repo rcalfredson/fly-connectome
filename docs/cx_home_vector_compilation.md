@@ -1,5 +1,9 @@
 # Bounded recurrent-block compilation
 
+The subsequent [combined-optimization experiment](cx_home_vector_combined_optimization.md)
+tests the same compiled blocks at batch sizes 8 and 128. Measurements below
+remain the original batch-eight reference.
+
 On 2026-11-04 we tested `torch.compile` on blocks of 32 consecutive recurrent
 transitions. This is an optional profiling experiment; the scientific trainer
 still uses eager execution. Padded batching, PFN mapping, dt, loss, clipping,
