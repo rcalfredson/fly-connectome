@@ -35,6 +35,11 @@ def finish(output, record):
         verify_bundle(source)
         if digest(source / "manifest.json") != settings["source_manifest_sha256"]:
             raise ValueError("Prepared source changed during experiment.")
+    if "resume_source" in settings:
+        parent = Path(settings["resume_source"])
+        verify_bundle(parent)
+        if digest(parent / "manifest.json") != settings["resume_manifest_sha256"]:
+            raise ValueError("Resume parent changed during experiment.")
     record.update(status="complete", finished_at_utc=datetime.now(timezone.utc).isoformat(),
                   artifacts={p.name: digest(p) for p in output.iterdir()
                              if p.is_file() and p.name != "manifest.json"})
@@ -233,6 +238,7 @@ def train(args):
     from .training_batches import backward_grouped
     from .loss_balance import example_weights, loss_plan, trajectory_group, validation_scores
     from .vector_change import change_plan, require_windows
+    from .resume import checkpoint as training_checkpoint, load_resume, restore_rng
 
     batching = getattr(args, "batching", "padded")
     length_ratio = getattr(args, "length_ratio", 2.)
@@ -268,13 +274,24 @@ def train(args):
     if compile_block:
         network.compile_recurrence(compile_block)
     optimizer = torch.optim.Adam(network.parameters(), lr=.001)
+    resume = None
+    if getattr(args, "resume", None):
+        settings = dict(seed=args.seed, rewire_seed=args.rewire_seed, recurrence=not args.no_recurrence,
+                        batch_size=args.batch_size, device=args.device, threads=args.threads,
+                        benchmark=args.benchmark, batching=batching, length_ratio=length_ratio,
+                        compile_block=compile_block, loss_mode=loss_mode)
+        resume = load_resume(args.resume, args.source, settings, task, plan, change, network)
+        optimizer.load_state_dict(resume["last"]["optimizer"])
+        restore_rng(resume["last"], rng)
+    start_update = resume["metadata"]["starting_update"] if resume else 0
     output, record = begin(args.output, "home_vector_training_v1", source=str(Path(args.source).resolve()),
         source_manifest_sha256=digest(Path(args.source) / "manifest.json"),
         seed=args.seed, rewire_seed=args.rewire_seed, recurrence=not args.no_recurrence,
         updates=args.updates, batch_size=args.batch_size, max_seconds=args.max_seconds,
         device=args.device, threads=args.threads, benchmark=args.benchmark,
         batching=batching, length_ratio=length_ratio, compile_block=compile_block, loss_mode=loss_mode,
-        change_weight=change["weight"], change_window_s=change["window_s"])
+        change_weight=change["weight"], change_window_s=change["window_s"],
+        **(resume["metadata"] if resume else {}))
     record.update(torch=torch.__version__, parameter_count=sum(p.numel() for p in network.parameters()))
     write_json(output / "manifest.json", record)
     try:
@@ -298,8 +315,13 @@ def train(args):
             population_types=list(circuit.population_types),
             normalization="counts / mean projection input across all selected receivers",
             numerical_guard_max_rate=1e6, dtype="float32", dt_s=task["dt_s"],
-            length_scale_mm=task["length_scale_mm"]))
-        history, best, completed = [], float("inf"), 0
+            length_scale_mm=task["length_scale_mm"], resume=resume["metadata"] if resume else None))
+        history = resume["history"] if resume else []
+        best = resume["best"] if resume else float("inf")
+        completed = start_update
+        elapsed_offset = history[-1]["elapsed_s"] if history else 0.
+        if resume and resume["best_state"] is not None:
+            torch.save(resume["best_state"], output / "best.pt")
         started = time.monotonic()
         for update in range(args.updates):
             # A wall cap is checked between full-trajectory updates, never by cutting history.
@@ -323,13 +345,13 @@ def train(args):
             norm = torch.nn.utils.clip_grad_norm_(network.parameters(), 1., error_if_nonfinite=True)
             optimizer.step()
             network.project_parameters()
-            completed = update + 1
-            row = dict(update=completed, elapsed_s=time.monotonic() - started, loss=float(loss.detach()),
+            completed = start_update + update + 1
+            row = dict(update=completed, elapsed_s=elapsed_offset + time.monotonic() - started, loss=float(loss.detach()),
                        gradient_norm=float(norm), gradient_clipped=bool(norm > 1.), **{k: float(v.detach()) for k, v in terms.items()})
             if grouping is not None:
                 row["grouping"] = grouping
             # Benchmarks time updates only; their checkpoint is explicitly unselected.
-            validate = not args.benchmark and (completed % args.validate_every == 0 or completed == args.updates)
+            validate = not args.benchmark and (completed % args.validate_every == 0 or completed == start_update + args.updates)
             if validate:
                 result, _, _, _ = evaluate(network, circuit, groups["validation"], task["dt_s"],
                                            args.device, task["length_scale_mm"], **evaluation_options)
@@ -338,17 +360,16 @@ def train(args):
                 row.update(validation_scores(result, groups["validation"], task["length_scale_mm"], plan))
                 if row["validation_selection_score"] < best:
                     best = row["validation_selection_score"]
-                    torch.save(dict(model=network.state_dict(), optimizer=optimizer.state_dict(), update=completed,
-                        numpy_rng=rng.bit_generator.state, torch_rng=torch.get_rng_state()), output / "best.pt")
+                    torch.save(training_checkpoint(network, optimizer, completed, rng), output / "best.pt")
             history.append(row)
             # Flush progress for interrupted runs as well as successful ones.
             write_json(output / "history.json", history)
-        torch.save(dict(model=network.state_dict(), optimizer=optimizer.state_dict(), update=completed,
-                       numpy_rng=rng.bit_generator.state, torch_rng=torch.get_rng_state()), output / "last.pt")
-        benchmark = dict(completed_updates=completed, elapsed_s=time.monotonic() - started,
-                         seconds_per_update=(time.monotonic() - started) / completed,
+        torch.save(training_checkpoint(network, optimizer, completed, rng), output / "last.pt")
+        benchmark = dict(completed_updates=completed - start_update, starting_update=start_update,
+                         final_update=completed, elapsed_s=time.monotonic() - started,
+                         seconds_per_update=(time.monotonic() - started) / (completed - start_update),
                          purpose="engineering benchmark" if args.benchmark else "pilot training",
-                         stopping_reason="update_limit" if completed == args.updates else "wall_time_cap")
+                         stopping_reason="update_limit" if completed == start_update + args.updates else "wall_time_cap")
         write_json(output / "timing.json", benchmark)
         if not args.benchmark:
             # A time cap can occur before a scheduled validation; select the available final checkpoint.
@@ -361,8 +382,7 @@ def train(args):
                 if change["enabled"]:
                     history[-1]["validation_change"] = result["vector_change"]
                 write_json(output / "history.json", history)
-                torch.save(dict(model=network.state_dict(), optimizer=optimizer.state_dict(), update=completed,
-                    numpy_rng=rng.bit_generator.state, torch_rng=torch.get_rng_state()), output / "best.pt")
+                torch.save(training_checkpoint(network, optimizer, completed, rng), output / "best.pt")
             checkpoint = torch.load(output / "best.pt", weights_only=False, map_location=args.device)
             network.load_state_dict(checkpoint["model"])
             report = {}
@@ -388,7 +408,8 @@ def train(args):
             report["loss_mode"] = loss_mode
             report["selection"] = validation_scores(report["validation"], groups["validation"],
                                                      task["length_scale_mm"], plan)
-            report["gradient_clipped_fraction"] = float(np.mean([r["gradient_clipped"] for r in history]))
+            report["gradient_clipped_fraction"] = float(np.mean([
+                r.get("gradient_clipped", r["gradient_norm"] > 1.) for r in history]))
             report["bounds"] = dict(tau_s=network.tau.detach().cpu().tolist(),
                 bias=network.bias.detach().cpu().tolist(),
                 max_abs_coefficient=float(network.a.detach().abs().max()),
@@ -429,7 +450,9 @@ def main(argv=None):
     fit.add_argument("--seed", type=int, default=0)
     fit.add_argument("--rewire-seed", type=int)
     fit.add_argument("--no-recurrence", action="store_true")
-    fit.add_argument("--updates", type=int, default=2000)
+    fit.add_argument("--resume", help="Continue a verified complete training bundle from last.pt into a fresh output")
+    fit.add_argument("--updates", type=int, default=2000,
+                     help="Optimizer updates to run now (additional updates when resuming)")
     fit.add_argument("--batch-size", type=int, default=8)
     fit.add_argument("--max-seconds", type=float, default=7200)
     fit.add_argument("--validate-every", type=int, default=50)

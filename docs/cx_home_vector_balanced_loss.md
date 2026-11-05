@@ -9,6 +9,10 @@ The separate [vector-change supervision variant](cx_home_vector_vector_change.md
 can add an opt-in fixed-window term to either absolute loss mode. It is disabled
 by default and was not part of the first balanced-loss run.
 
+The first run has now completed 500 updates. The
+[continuation guide](cx_home_vector_resume.md) describes extending its unchanged
+objective from the saved model, Adam and random-number states.
+
 ## Purpose and fixed controls
 
 The [500-update long-path pilot](cx_home_vector_long_u500_assessment.md)
