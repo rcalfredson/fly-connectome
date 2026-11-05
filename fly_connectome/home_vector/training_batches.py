@@ -25,7 +25,7 @@ def length_groups(records, dt, max_ratio=2.):
 
 
 def backward_grouped(network, circuit, records, dt, device, scale, max_ratio=2., section=None,
-                     trajectory_weights=None):
+                     trajectory_weights=None, change=None):
     """Accumulate one sampled batch's gradient; caller clips/steps exactly once.
 
     Data terms are weighted by subgroup_size / original_batch_size. Parameter
@@ -39,6 +39,8 @@ def backward_grouped(network, circuit, records, dt, device, scale, max_ratio=2.,
     section = section or (lambda name: nullcontext())
     groups, description = length_groups(records, dt, max_ratio)
     task, activity = network.a.new_zeros(()), network.a.new_zeros(())
+    change_term = network.a.new_zeros(())
+    change_weight = change["weight"] if change is not None and change["enabled"] else 0.
     penalty = None
     for positions in groups:
         with section("batch_preparation_and_transfer"):
@@ -48,11 +50,14 @@ def backward_grouped(network, circuit, records, dt, device, scale, max_ratio=2.,
             prediction, rates = network(x, dt)
         with section("objective_and_guard"):
             weights = None if trajectory_weights is None else trajectory_weights[positions]
-            loss, terms = objective(prediction, target, rates, mask, scale, network, weights)
+            loss, terms = objective(prediction, target, rates, mask, scale, network, weights, change)
             if not torch.isfinite(loss) or not torch.isfinite(rates).all() or rates.max() > 1e6:
                 raise ValueError("Grouped training exceeded the numerical guard.")
             weight = len(positions) / len(records)
             data_loss = weight * (terms["task"] + LOSS_WEIGHTS["activity"] * terms["activity"])
+            if change_weight:
+                data_loss = data_loss + weight * change_weight * terms["change"]
+                change_term = change_term + weight * terms["change"].detach()
             if penalty is None:
                 penalty = LOSS_WEIGHTS["edge_prior"] * terms["edge_prior"] + LOSS_WEIGHTS["decoder"] * terms["decoder"]
                 prior, decoder = terms["edge_prior"].detach(), terms["decoder"].detach()
@@ -64,5 +69,9 @@ def backward_grouped(network, circuit, records, dt, device, scale, max_ratio=2.,
         del x, target, mask, prediction, rates, loss, terms, data_loss
     with section("backward"):
         penalty.backward()
-    return (task + LOSS_WEIGHTS["activity"] * activity + penalty.detach(),
-            dict(task=task, activity=activity, edge_prior=prior, decoder=decoder), description)
+    total = task + LOSS_WEIGHTS["activity"] * activity + penalty.detach()
+    terms = dict(task=task, activity=activity, edge_prior=prior, decoder=decoder)
+    if change_weight:
+        total = total + change_weight * change_term
+        terms["change"] = change_term
+    return total, terms, description

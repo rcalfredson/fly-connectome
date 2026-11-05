@@ -196,7 +196,7 @@ def batch(circuit, records, dt, device, dtype):
     return tuple(torch.as_tensor(x, device=device, dtype=dtype) for x in [pfn, target, mask])
 
 
-def evaluate(network, circuit, records, dt, device, scale):
+def evaluate(network, circuit, records, dt, device, scale, change=None):
     import torch
     predictions, targets, late_p, late_y, per_trajectory = [], [], [], [], []
     states = []
@@ -221,6 +221,9 @@ def evaluate(network, circuit, records, dt, device, scale):
     result["equal_trajectory_scaled_mse"] = float(np.mean([r["mse_mm2"] for r in per_trajectory]) / scale ** 2)
     result["late_5s_pause"] = metrics(late_p, late_y) if late_p else None
     result["per_trajectory"] = per_trajectory
+    if change is not None and change["enabled"]:
+        from .vector_change import change_metrics
+        result["vector_change"] = change_metrics(predictions, targets, records, dt, change)
     return result, predictions, targets, states
 
 
@@ -229,6 +232,7 @@ def train(args):
     from .model import HomeVectorNetwork, objective
     from .training_batches import backward_grouped
     from .loss_balance import example_weights, loss_plan, trajectory_group, validation_scores
+    from .vector_change import change_plan, require_windows
 
     batching = getattr(args, "batching", "padded")
     length_ratio = getattr(args, "length_ratio", 2.)
@@ -246,6 +250,12 @@ def train(args):
     plan = loss_plan(loss_mode, groups["train"], task["dt_s"])
     if loss_mode == "balanced" and {trajectory_group(r) for r in groups["validation"]} != {"original", "long"}:
         raise ValueError("Balanced validation requires both original and long groups.")
+    change = change_plan(getattr(args, "change_weight", 0.), getattr(args, "change_window", 1.),
+                         groups["train"], task["dt_s"])
+    if change["enabled"]:
+        for split in ("validation", "test", "challenge"):
+            require_windows(groups[split], task["dt_s"], change["window_steps"])
+    evaluation_options = {"change": change} if change["enabled"] else {}
     diagnostics = None
     if args.rewire_seed is not None:
         circuit, diagnostics = rewire(circuit, args.rewire_seed)
@@ -263,7 +273,8 @@ def train(args):
         seed=args.seed, rewire_seed=args.rewire_seed, recurrence=not args.no_recurrence,
         updates=args.updates, batch_size=args.batch_size, max_seconds=args.max_seconds,
         device=args.device, threads=args.threads, benchmark=args.benchmark,
-        batching=batching, length_ratio=length_ratio, compile_block=compile_block, loss_mode=loss_mode)
+        batching=batching, length_ratio=length_ratio, compile_block=compile_block, loss_mode=loss_mode,
+        change_weight=change["weight"], change_window_s=change["window_s"])
     record.update(torch=torch.__version__, parameter_count=sum(p.numel() for p in network.parameters()))
     write_json(output / "manifest.json", record)
     try:
@@ -278,7 +289,7 @@ def train(args):
             batching=dict(mode=batching, max_length_ratio=length_ratio,
                           sampling="Uniform original batch; group gradients weighted by trajectory count; one optimizer step"),
             loss=dict(prediction="equal-trajectory mean of squared Cartesian error / L^2; optional frozen group weights",
-                      **plan,
+                      **plan, vector_change=change,
                       activity=1e-5, edge_initialization_prior=1e-4, decoder_weights=1e-5),
             bounds=dict(edge_coefficient=[-5, 5], bias=[-2, 2], tau_s=[.05, .5]),
             initial=dict(bias=.1, tau_s=.1, decoder=0., input_edge_coefficient=1.,
@@ -301,14 +312,14 @@ def train(args):
                 x, target, mask = batch(circuit, selected, task["dt_s"], args.device, network.a.dtype)
                 optimizer.zero_grad(set_to_none=True)
                 prediction, rates = network(x, task["dt_s"])
-                loss, terms = objective(prediction, target, rates, mask, task["length_scale_mm"], network, weights)
+                loss, terms = objective(prediction, target, rates, mask, task["length_scale_mm"], network, weights, change)
                 if not torch.isfinite(loss) or not torch.isfinite(rates).all() or rates.max() > 1e6:
                     raise ValueError("Training exceeded numerical guard.")
                 loss.backward()
             else:
                 optimizer.zero_grad(set_to_none=True)
                 loss, terms, grouping = backward_grouped(network, circuit, selected, task["dt_s"],
-                    args.device, task["length_scale_mm"], length_ratio, trajectory_weights=weights)
+                    args.device, task["length_scale_mm"], length_ratio, trajectory_weights=weights, change=change)
             norm = torch.nn.utils.clip_grad_norm_(network.parameters(), 1., error_if_nonfinite=True)
             optimizer.step()
             network.project_parameters()
@@ -321,7 +332,9 @@ def train(args):
             validate = not args.benchmark and (completed % args.validate_every == 0 or completed == args.updates)
             if validate:
                 result, _, _, _ = evaluate(network, circuit, groups["validation"], task["dt_s"],
-                                           args.device, task["length_scale_mm"])
+                                           args.device, task["length_scale_mm"], **evaluation_options)
+                if change["enabled"]:
+                    row["validation_change"] = result["vector_change"]
                 row.update(validation_scores(result, groups["validation"], task["length_scale_mm"], plan))
                 if row["validation_selection_score"] < best:
                     best = row["validation_selection_score"]
@@ -341,10 +354,12 @@ def train(args):
             # A time cap can occur before a scheduled validation; select the available final checkpoint.
             if not (output / "best.pt").exists():
                 result, _, _, _ = evaluate(network, circuit, groups["validation"], task["dt_s"], args.device,
-                                          task["length_scale_mm"])
+                                          task["length_scale_mm"], **evaluation_options)
                 scores = validation_scores(result, groups["validation"], task["length_scale_mm"], plan)
                 best = scores["validation_selection_score"]
                 history[-1].update(scores)
+                if change["enabled"]:
+                    history[-1]["validation_change"] = result["vector_change"]
                 write_json(output / "history.json", history)
                 torch.save(dict(model=network.state_dict(), optimizer=optimizer.state_dict(), update=completed,
                     numpy_rng=rng.bit_generator.state, torch_rng=torch.get_rng_state()), output / "best.pt")
@@ -353,15 +368,15 @@ def train(args):
             report = {}
             for split in ["validation", "test", "challenge"]:
                 report[split], predictions, targets, states = evaluate(network, circuit, groups[split],
-                    task["dt_s"], args.device, task["length_scale_mm"])
+                    task["dt_s"], args.device, task["length_scale_mm"], **evaluation_options)
                 np.savez_compressed(output / f"{split}_predictions.npz", **{
                     f"{kind}_{i}": array for kind, arrays in [("prediction", predictions), ("target", targets)]
                     for i, array in enumerate(arrays)})
             # Half-step validation uses only validation records, at identical physical timestamps.
             _, _, _, coarse_r = evaluate(network, circuit, groups["validation"], task["dt_s"],
-                                                args.device, task["length_scale_mm"])
+                                                args.device, task["length_scale_mm"], **evaluation_options)
             fine_result, fine_p, _, fine_r = evaluate(network, circuit, groups["validation"], task["dt_s"] / 2,
-                                                     args.device, task["length_scale_mm"])
+                                                     args.device, task["length_scale_mm"], **evaluation_options)
             delta = sum(np.sum((a - b[::2]) ** 2) for a, b in zip(coarse_r, fine_r))
             energy = sum(np.sum(b[::2] ** 2) for b in fine_r)
             state_error = float(np.sqrt(delta / max(energy, 1e-24)))
@@ -425,6 +440,10 @@ def main(argv=None):
     fit.add_argument("--benchmark", action="store_true")
     fit.add_argument("--loss-mode", choices=["original", "balanced"], default="original",
                      help="Task loss: historical equal-trajectory error, or frozen training-energy group weights.")
+    fit.add_argument("--change-weight", type=float, default=0.,
+                     help="Opt-in vector-change loss coefficient; 0 disables it. Suggested first trial: 1.")
+    fit.add_argument("--change-window", type=float, default=1.,
+                     help="Vector-change window in seconds (default 1); must align with the simulation grid.")
     fit.add_argument("--batching", choices=["padded", "length-groups"], default="padded")
     fit.add_argument("--length-ratio", type=float, default=2., help="Maximum sample-length ratio within a subgroup")
     fit.set_defaults(action=train)

@@ -5,6 +5,10 @@ experiment has been launched. Its scientific assessment is pending.
 The original loss remains the default, explicitly selectable with
 `--loss-mode original`. Existing commands retain their original objective.
 
+The separate [vector-change supervision variant](cx_home_vector_vector_change.md)
+can add an opt-in fixed-window term to either absolute loss mode. It is disabled
+by default and was not part of the first balanced-loss run.
+
 ## Purpose and fixed controls
 
 The [500-update long-path pilot](cx_home_vector_long_u500_assessment.md)

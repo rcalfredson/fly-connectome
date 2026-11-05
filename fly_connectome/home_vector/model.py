@@ -124,8 +124,11 @@ class HomeVectorNetwork(nn.Module):
             self.tau.clamp_(.05, .5)
 
 
-def objective(prediction, target, rates, mask, scale, network, trajectory_weights=None):
-    """Mean trajectory loss; optional frozen weights affect only prediction error."""
+def objective(prediction, target, rates, mask, scale, network, trajectory_weights=None, change=None):
+    """Absolute task loss, optional change supervision and unchanged penalties.
+
+    Frozen trajectory weights affect only the absolute prediction-error term.
+    """
     if not np.isfinite(scale) or scale <= 0 or mask.ndim != 2 or not (mask.sum(1) > 0).all():
         raise ValueError("Require positive training-only scale and nonempty trajectory masks.")
     error = ((prediction - target) / scale).square().sum(-1)
@@ -141,4 +144,9 @@ def objective(prediction, target, rates, mask, scale, network, trajectory_weight
     decoder = network.D.square().mean()
     total = (task + LOSS_WEIGHTS["activity"] * activity + LOSS_WEIGHTS["edge_prior"] * prior
              + LOSS_WEIGHTS["decoder"] * decoder)
-    return total, dict(task=task, activity=activity, edge_prior=prior, decoder=decoder)
+    terms = dict(task=task, activity=activity, edge_prior=prior, decoder=decoder)
+    if change is not None and change["enabled"]:
+        from .vector_change import change_loss
+        terms["change"] = change_loss(prediction, target, mask, change)
+        total = total + change["weight"] * terms["change"]
+    return total, terms
