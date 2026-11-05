@@ -1,12 +1,19 @@
 # Bounded recurrent-block compilation
 
+Status, November 5: `home_vector train` now accepts `--compile-block 32`.
+See the [long-path walkthrough](cx_home_vector_long_training.md#optimized-exposure-matched-pilot)
+for the batch-128 pilot command. Evaluation remains eager under `no_grad()`;
+compiled training now uses a time-major contiguous input-drive copy to avoid
+sequence-length-dependent view strides. The measurements below describe the
+original profiling implementation before that integration.
+
 The subsequent [combined-optimization experiment](cx_home_vector_combined_optimization.md)
 tests the same compiled blocks at batch sizes 8 and 128. Measurements below
 remain the original batch-eight reference.
 
 On 2026-11-04 we tested `torch.compile` on blocks of 32 consecutive recurrent
-transitions. This is an optional profiling experiment; the scientific trainer
-still uses eager execution. Padded batching, PFN mapping, dt, loss, clipping,
+transitions. This began as an optional profiling experiment; the scientific trainer
+used eager execution at that time. Padded batching, PFN mapping, dt, loss, clipping,
 Adam and full-history differentiation are retained.
 
 ## What is compiled
@@ -60,7 +67,7 @@ second update took 10.41 s and 10.59 s respectively, including specialization
 for the new 64-second shape. The third updates took 3.00 s and 2.49 s.
 These startup figures include the entire update, not just compiler time.
 
-Input-drive views retain strides dependent on padded trajectory length.
+In that original profiling implementation, input-drive views retained strides dependent on padded trajectory length.
 Consequently a new padded length, batch size, dtype or gradient configuration
 may require another graph. Two warmups cover the shapes in this measurement;
 they do not establish that arbitrary future training batches avoid recompilation.
@@ -131,8 +138,9 @@ The verified comparison summary is saved in
 with hashes of its input profiles and the prepared source manifest.
 
 This result supports keeping compiled blocks as an optimization candidate.
-Before enabling them in the scientific trainer, examine recompilation across
-its full length distribution and the intended larger batch size. It does not
+The subsequent combined benchmark tested the intended larger batch size;
+the November 5 integration tests sequence-length-independent graph reuse
+and eager evaluation before exposing the option in the scientific trainer. It does not
 show that the trained model integrates longer home vectors: no full scientific
 training or model-selection run was performed in this experiment.
 

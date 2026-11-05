@@ -1,11 +1,14 @@
 # Training-distribution experiment: longer straight walks
 
-Prepared 4 November 2026. The new data bundle is ready; the full scientific
-training run has not started. A three-update GPU benchmark has completed;
-[profiling tools](cx_home_vector_training_profile.md) investigate its cost
-before launching the full run. The model, PFN encoding and
-optimizer implementation are unchanged. The comparison is the existing
-hDeltaC short-trained checkpoint versus a newly initialized hDeltaC fit with
+Status, November 5: the 125- and 500-update long-path pilots have completed.
+The [500-update assessment](cx_home_vector_long_u500_assessment.md) includes
+challenge plots, validation/test subset scores and 96/128-second extrapolation.
+Update 500 was selected and passed the numerical convergence gate.
+
+Prepared 4 November 2026. The historical preparation and benchmark details
+below are retained for provenance. The circuit and PFN encoding are unchanged;
+execution optimizations and the batch-128 schedule are documented below.
+The comparison is the existing hDeltaC short-trained checkpoint versus a newly initialized hDeltaC fit with
 the same seed, trained on an augmented trajectory distribution.
 
 ## What changes and what stays fixed
@@ -79,6 +82,60 @@ task back into preparation.
 
 ## Benchmark and train
 
+As of November 5, training accepts `--compile-block 32`. The
+[combined-optimization experiment](cx_home_vector_combined_optimization.md)
+measured approximately 4.55 seconds per warmed GPU update at batch 128,
+versus 9.53 seconds eager. That gives a practical starting point for an
+exposure-matched pilot. Compilation is off by default; passing `0` or
+omitting the option retains eager training.
+
+### Optimized exposure-matched pilot
+
+Use a fresh output name (replace `NEW` with your chosen run identifier):
+
+```bash
+OPENBLAS_NUM_THREADS=1 python -m fly_connectome.home_vector train \
+  results/cx-home-vector-hdeltac-long-data-20261104 \
+  --output results/cx-home-vector-hdeltac-long-b128-compile32-seed0-NEW \
+  --device cuda --seed 0 --updates 125 --batch-size 128 --compile-block 32 \
+  --threads 1 --validate-every 25 --max-seconds 7200
+```
+
+This processes 16,000 sampled trajectory presentations, matching the exposure
+of 2,000 batch-eight updates. It makes sixteen times fewer optimizer updates,
+so it is a changed optimization schedule, not a promise of equal convergence.
+Adam's learning rate, parameter bounds, regularization, dt and full-history
+backpropagation are retained. Validation every 25 updates gives five model-selection checks during this
+short pilot. It is explicitly a new schedule, not exposure-matched to the
+original validation interval. Validation can dominate elapsed time; increase
+this interval if fewer checks are acceptable.
+
+The earlier timing estimate was about 9 minutes 29 seconds for update
+computation alone. Startup, validation, final evaluation, checkpoint I/O and
+the production input-layout copy add costs; the two-hour cap is a guard,
+not a runtime prediction. The trainer checks that cap between updates;
+final evaluation can continue beyond it. No validation-plateau stopping rule
+is enabled. If 125 updates underfit, diagnose optimization before interpreting
+that as a capacity limit.
+
+`manifest.json` records `compile_block`, while `training_config.json` records
+the backend, block length, input layout and eager evaluation policy. Compiled
+training uses a time-major contiguous drive layout to keep block-view strides
+independent of padded sequence length; the extra copy can affect time and
+memory. Short block tails remain eager. All `torch.no_grad()` rollouts,
+including scheduled validation, final evaluation and the half-step numerical
+check, use the original eager recurrence. This avoids compiling their many
+single-trajectory lengths. Checkpoints retain the original parameter names
+and load into an ordinary eager model for downstream analyses.
+
+To run an optional unselected benchmark of this exact execution mode first,
+use the same command with a separate output, `--updates 3 --benchmark`.
+That benchmark includes first-use compilation in its update timings.
+Do not resume that benchmark as the scientific fit. The integration checks
+launched no full fit; the subsequent completed pilots are assessed above.
+
+### Original batch-eight reference
+
 The already prepared November 4 bundle can be used directly. A benchmark has
 already completed at `results/cx-home-vector-hdeltac-long-benchmark-seed0-20261104`;
 it averaged 28.35 seconds per update over three updates, compared with 2.14
@@ -139,13 +196,19 @@ verified source bundles and explicitly permits their intended task difference:
 OPENBLAS_NUM_THREADS=1 python -m fly_connectome.home_vector.analysis.straight \
   --reference-run results/cx-home-vector-hdeltac-anatomy-seed0-2026-11-01 \
   --reference-source results/cx-home-vector-hdeltac-data-20261101 \
-  --run results/cx-home-vector-hdeltac-long-anatomy-seed0-NEW \
+  --run results/cx-home-vector-hdeltac-long-b128-compile32-seed0-NEW \
   --source results/cx-home-vector-hdeltac-long-data-20261104 \
   --reference-label "hDeltaC, short training" \
-  --label "hDeltaC, long training" \
+  --label "hDeltaC, long training, batch 128" \
   --allow-task-differences --duration 128 --sample-times 16 32 64 96 128 \
-  --output results/cx-home-vector-hdeltac-long-comparison-NEW
+  --speeds 1 \
+  --output results/cx-home-vector-hdeltac-long-comparison-s1-NEW
 ```
+
+This command evaluates the 1 mm/s subset. Repeat separately with `--speeds 0.25`,
+`--speeds 0.5` and `--speeds 2`, using a fresh output for each, to cover all
+four speeds. The completed assessment used this smaller-job approach after
+the all-speed 128-second sweep was terminated before writing results.
 
 The opt-in requires byte-identical circuits and identical time steps; each run
 must still match its own recorded source manifest. Default comparisons retain
@@ -188,3 +251,25 @@ custom labels, CSV prefix rows and ten-second summaries within a continuous
 16-second rollout. Both sides produced identical predictions and metrics;
 the smoke bundle hashes verified. This check performed no optimizer updates
 and is not a new trained result.
+
+
+### Compilation integration (November 5)
+
+The focused home-vector and batch-toy suite passed 100 tests, with four
+optional-neuprint skips and two unavailable-CUDA skips inside the sandbox.
+The separately executed GPU compiled-training integration case passed too.
+New tests cover CLI/configuration recording, ten sequence lengths reusing
+at most two bounded graphs, eager no-grad evaluation across batch sizes,
+validation and best-checkpoint selection, final predictions, checkpoint
+portability and the half-step numerical check.
+
+A disposable full-length GPU profile of the production layout, saved at
+`results/cx-home-vector-training-compile-layout-b128-cuda-20261105`, averaged
+4.263 s per warmed batch-128 update and peaked at 6.619 GiB allocated. It used
+the same two warmup and three measured batches as the November 4 combined
+compiled case. Final model tensors and Adam state matched that previous case
+bitwise, and loss/gradient-norm histories passed agreement checks. Timings
+were measured on different occasions and do not establish that the layout
+copy itself improved speed. Both repeated profiling passes agreed exactly.
+The source bundle is unchanged. That integration profile launched no full
+fit; the subsequent completed pilots are assessed above.
