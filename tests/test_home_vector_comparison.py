@@ -45,3 +45,66 @@ def test_reversal_lag_measures_turnaround_separately_from_late_closure():
     assert result["reversal"]["additional_negative_x_excursion_mm"] == .5
     assert result["reversal"]["error_at_true_return_mm"] == .5
     assert result["reversal"]["final_pause_error_mm"] == 0
+
+
+def test_cross_task_challenge_comparison_requires_explicit_opt_in_and_exact_protocols(tmp_path):
+    import copy
+    from types import SimpleNamespace
+    import pytest
+    from fly_connectome.home_vector.analysis.compare import validate_challenge_comparison
+    inputs = []
+    for name in ('reference', 'current'):
+        folder = tmp_path / name
+        folder.mkdir()
+        (folder / 'circuit.json').write_text('same circuit')
+        (folder / 'task.json').write_text(name)
+        (folder / 'trajectories.json').write_text(name)
+        inputs.append(SimpleNamespace(run=folder, source=folder,
+            task=dict(dt_s=.0025, length_scale_mm=2.),
+            groups=dict(challenge=[dict(family='example', protocol=[[0, 0, 1, 0], [2, 0, 1, 0]])])))
+    reference, current = inputs
+    with pytest.raises(ValueError, match='identical task'):
+        validate_challenge_comparison(reference, current, False)
+    validate_challenge_comparison(reference, current, True)
+    old = copy.deepcopy(current.groups)
+    current.groups['challenge'][0]['protocol'][1][0] = 3
+    with pytest.raises(ValueError, match='protocols'):
+        validate_challenge_comparison(reference, current, True)
+    current.groups = old
+    for key in ('dt_s', 'length_scale_mm'):
+        value = current.task[key]
+        current.task[key] = value * 2
+        with pytest.raises(ValueError, match='circuits, time steps and loss scales'):
+            validate_challenge_comparison(reference, current, True)
+        current.task[key] = value
+    (current.run / 'circuit.json').write_text('different circuit')
+    with pytest.raises(ValueError, match='circuits'):
+        validate_challenge_comparison(reference, current, True)
+
+
+def test_validation_plot_warns_about_actual_membership_not_permission_flag(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import matplotlib.pyplot as plt
+    from fly_connectome.home_vector.analysis.compare import plot_comparison
+    from fly_connectome.home_vector.data import datasets, sample_protocol
+    groups = datasets(4, dict(train=2, validation=2, test=2))
+    audit = SimpleNamespace(groups=groups, task=dict(dt_s=.25), out=tmp_path)
+    truth = [sample_protocol(row['protocol'], .25)[1] for row in groups['challenge']]
+    calls = []
+    original_subplots = plt.subplots
+
+    def capture(*args, **kwargs):
+        result = original_subplots(*args, **kwargs)
+        calls.append(result[0])
+        return result
+
+    monkeypatch.setattr(plt, 'subplots', capture)
+    history = [dict(update=1, scaled_mse=1.)]
+    report = dict(model_labels=dict(reference='Earlier fit', current='Later fit'),
+                  reference=dict(validation_history=history), current=dict(validation_history=history),
+                  task_differences_allowed=True)
+    for matching in (True, False):
+        report['validation_sets_match'] = matching
+        plot_comparison((audit, audit), ((truth, truth), (truth, truth)), report)
+        title = calls[-1].axes[0].get_title()
+        assert ('Different validation sets' in title) == (not matching)

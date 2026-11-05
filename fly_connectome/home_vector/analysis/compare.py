@@ -165,14 +165,29 @@ def summarize(audit, replay):
     return result, (p, y)
 
 
+def validate_challenge_comparison(reference, current, allow_task_differences):
+    if not allow_task_differences:
+        for name in ("trajectories.json", "task.json"):
+            if digest(reference.source / name) != digest(current.source / name):
+                raise ValueError("Comparison requires identical task and trajectory files.")
+    else:
+        if (digest(reference.run / "circuit.json") != digest(current.run / "circuit.json")
+                or reference.task["dt_s"] != current.task["dt_s"]
+                or reference.task["length_scale_mm"] != current.task["length_scale_mm"]):
+            raise ValueError("Different-task challenge comparison requires identical circuits, time steps and loss scales.")
+    if reference.groups["challenge"] != current.groups["challenge"]:
+        raise ValueError("Challenge protocols must match exactly.")
+
+
 def plot_comparison(audits, arrays, report):
     fig, axes = plt.subplots(2, 3, figsize=(15, 8), layout="constrained")
-    for label, audit, (predictions, targets) in zip(("Original", "+hDeltaC"), audits, arrays):
+    for model_index, (label, audit, (predictions, targets)) in enumerate(zip(report["model_labels"].values(), audits, arrays)):
         rows, dt = audit.groups["challenge"], audit.task["dt_s"]
         long = next(i for i, row in enumerate(rows) if row["family"] == "challenge-long-64")
         t = np.arange(len(predictions[long])) * dt
-        axes[0, 0].plot(t, np.linalg.norm(predictions[long], axis=1), label=label)
-        if label == "Original":
+        color = f"C{model_index}"
+        axes[0, 0].plot(t, np.linalg.norm(predictions[long], axis=1), label=label, color=color)
+        if model_index == 0:
             axes[0, 0].plot(t, np.linalg.norm(targets[long], axis=1), "k--", label="True")
         for i, row in enumerate(rows):
             if row["family"] == "challenge-pause-5":
@@ -180,15 +195,16 @@ def plot_comparison(audits, arrays, report):
                 time = np.arange(len(predictions[i]) - onset) * dt
                 direction = "backward" if row["protocol"][0][2] < 0 else "forward"
                 ax = axes[0, 1] if direction == "backward" else axes[0, 2]
-                ax.plot(time, np.linalg.norm(predictions[i][onset:].astype(float) - targets[i][onset:], axis=1), label=label)
+                ax.plot(time, np.linalg.norm(predictions[i][onset:].astype(float) - targets[i][onset:], axis=1), label=label, color=color)
             if row["kind"] == "closed_loop":
                 time = np.arange(len(predictions[i])) * dt
                 for j, component in enumerate(("x", "y")):
-                    axes[1, j].plot(time, predictions[i][:, j] - targets[i][:, j], label=label)
+                    axes[1, j].plot(time, predictions[i][:, j] - targets[i][:, j], label=label, color=color)
             if row["family"] == "challenge-world-equivalent":
                 time = np.arange(len(predictions[i])) * dt
                 axes[1, 2].plot(time, np.linalg.norm(predictions[i].astype(float) - targets[i], axis=1),
-                                 label=f"{label}, {row['kind']}")
+                                 label=f"{label}, {row['kind']}", color=color,
+                                 linestyle="-" if row["kind"] == "forward" else "--")
     titles = ["Long straight path", "Pause after backward walking", "Pause after forward walking",
               "Square-loop x error", "Square-loop y error", "Same world path: vector errors"]
     labels = ["Predicted magnitude (mm)", "Vector error (mm)", "Vector error (mm)",
@@ -203,10 +219,12 @@ def plot_comparison(audits, arrays, report):
     fig.savefig(audits[1].out / "comparison.pdf")
     plt.close(fig)
     fig, ax = plt.subplots(figsize=(7, 4), layout="constrained")
-    for label in ("original", "hdeltac"):
-        h = report[label]["validation_history"]
+    for key, label in report["model_labels"].items():
+        h = report[key]["validation_history"]
         ax.plot([r["update"] for r in h], [r["scaled_mse"] for r in h], label=label)
     ax.set(xlabel="Training update", ylabel="Validation equal-trajectory MSE / L²", title="Checkpoint-selection objective")
+    if not report.get("validation_sets_match", not report["task_differences_allowed"]):
+        ax.set_title("Different validation sets: compare trends within each curve")
     ax.grid(alpha=.2)
     ax.legend()
     fig.savefig(audits[1].out / "validation_history.png", dpi=180)
@@ -218,24 +236,32 @@ def main(argv=None):
     for option in ("run", "source", "reference-run", "reference-source", "output"):
         parser.add_argument(f"--{option}", required=True)
     parser.add_argument("--replay-dynamics", action="store_true", help="Also replay the two long challenges on CPU")
+    parser.add_argument("--allow-task-differences", action="store_true",
+                        help="Allow different datasets, requiring identical circuits, dt, loss scale and challenge protocols")
+    parser.add_argument("--reference-label", default="Original")
+    parser.add_argument("--label", default="+hDeltaC")
     args = parser.parse_args(argv)
     args.command = "comparison"
     reference_args = copy.copy(args)
     reference_args.run, reference_args.source = args.reference_run, args.reference_source
     reference, current = Audit(reference_args), Audit(args)
-    for name in ("trajectories.json", "task.json"):
-        if digest(reference.source / name) != digest(current.source / name):
-            raise ValueError("Comparison requires identical task and trajectory files.")
+    validate_challenge_comparison(reference, current, args.allow_task_differences)
     with current:
         current.record["reference_source_sha256"] = reference.hashes
         a, ap = summarize(reference, args.replay_dynamics)
         b, bp = summarize(current, args.replay_dynamics)
-        report = dict(original=a, hdeltac=b, training_distribution=training_distribution(reference),
+        keys = ("reference", "current") if args.allow_task_differences else ("original", "hdeltac")
+        report = dict(zip(keys, (a, b)))
+        report.update(model_labels=dict(zip(keys, (args.reference_label, args.label))),
+                      task_differences_allowed=args.allow_task_differences,
+                      validation_sets_match=reference.groups["validation"] == current.groups["validation"],
+                      training_distribution=training_distribution(reference),
                       definitions=dict(
                           exploratory="Thresholds selected descriptively after inspecting these pilots; no preregistered gate or seed uncertainty claim.",
                           distance="First >=0.5 s of magnitude underestimation beyond 2 mm, at 10/20/30 percent tolerances; not a longest fully accurate distance.",
                           drift="Distance between pause-end and pause-onset predictions; target error is reported separately.",
-                          reversal="Delay to the minimum predicted x within the backward-walk interval after the 2 s switch; not a fit to a pure delay model."))
+                          reversal="Delay to the minimum predicted x within the backward-walk interval after the 2 s switch; not a fit to a pure delay model.",
+                          cross_task="Only identical challenge protocols are directly matched; aggregate validation/test scores use different datasets when task differences are allowed."))
         write_json(current.out / "comparison.json", report)
         plot_comparison((reference, current), (ap, bp), report)
         after = {str(p): digest(p) for folder in (reference.run, reference.source)
