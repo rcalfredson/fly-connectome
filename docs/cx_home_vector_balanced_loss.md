@@ -1,5 +1,10 @@
 # Balanced-loss follow-up
 
+Status, November 6: the 2,000-update continuation is complete. Validation selected
+update 1975, which passed the numerical convergence gate. See the
+[close-out assessment and proposed dynamics study](cx_home_vector_balanced_u2000_assessment.md).
+The November 5 setup and first-run notes below are retained for provenance.
+
 Status, November 5: implementation verified; the first 500-update balanced-loss
 experiment has been launched. Its scientific assessment is pending.
 The original loss remains the default, explicitly selectable with
