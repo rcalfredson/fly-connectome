@@ -135,21 +135,10 @@ def training_distribution(audit):
                for kind in sorted({row["kind"] for row in audit.groups["train"]})})
 
 
-def summarize(audit, replay):
-    p, y = audit.predictions("challenge")
-    rows, dt = audit.groups["challenge"], audit.task["dt_s"]
-    saved = json.loads((audit.run / "metrics.json").read_text())
-    history = json.loads((audit.run / "history.json").read_text())
-    result = dict(selected_update=saved["selected_update"], challenge=[
-        trajectory_summary(row, a, b, dt) for row, a, b in zip(rows, p, y)],
-        split_metrics={s: {k: saved[s][k] for k in ("normalized_rmse", "cartesian_rmse_mm", "equal_trajectory_scaled_mse")}
-                       for s in ("validation", "test", "challenge")},
-        validation_history=[dict(update=r["update"], scaled_mse=r["validation_scaled_mse"])
-                            for r in history if "validation_scaled_mse" in r], test_groups={})
-    tp, ty = audit.predictions("test")
-    for kind in sorted({row["kind"] for row in audit.groups["test"]}):
-        ix = [i for i, row in enumerate(audit.groups["test"]) if row["kind"] == kind]
-        result["test_groups"][kind] = metrics([tp[i] for i in ix], [ty[i] for i in ix])
+def summarize_challenges(rows, predictions, targets, dt):
+    """Shared challenge definitions for completed audits and checkpoint snapshots."""
+    p, y = predictions, targets
+    result = dict(challenge=[trajectory_summary(row, a, b, dt) for row, a, b in zip(rows, p, y)])
     indices = [i for i, row in enumerate(rows) if row["family"] == "challenge-world-equivalent"]
     if len(indices) != 2:
         raise ValueError("Require two world-equivalent challenge trajectories.")
@@ -160,6 +149,24 @@ def summarize(audit, replay):
     result["world_path_prediction_separation"] = dict(
         moving_rms_mm=float(np.sqrt(np.mean(separation[:moving_end] ** 2))),
         terminal_mm=float(separation[-1]))
+    return result
+
+
+def summarize(audit, replay):
+    p, y = audit.predictions("challenge")
+    rows, dt = audit.groups["challenge"], audit.task["dt_s"]
+    saved = json.loads((audit.run / "metrics.json").read_text())
+    history = json.loads((audit.run / "history.json").read_text())
+    result = dict(selected_update=saved["selected_update"],
+        **summarize_challenges(rows, p, y, dt),
+        split_metrics={s: {k: saved[s][k] for k in ("normalized_rmse", "cartesian_rmse_mm", "equal_trajectory_scaled_mse")}
+                       for s in ("validation", "test", "challenge")},
+        validation_history=[dict(update=r["update"], scaled_mse=r["validation_scaled_mse"])
+                            for r in history if "validation_scaled_mse" in r], test_groups={})
+    tp, ty = audit.predictions("test")
+    for kind in sorted({row["kind"] for row in audit.groups["test"]}):
+        ix = [i for i, row in enumerate(audit.groups["test"]) if row["kind"] == kind]
+        result["test_groups"][kind] = metrics([tp[i] for i in ix], [ty[i] for i in ix])
     if replay:
         result["long_path_state_diagnostics"] = replay_long_dynamics(audit)
     return result, (p, y)
@@ -179,45 +186,96 @@ def validate_challenge_comparison(reference, current, allow_task_differences):
         raise ValueError("Challenge protocols must match exactly.")
 
 
+def draw_long_paths(axes, cases):
+    """Show vector tips jointly in Cartesian space, plus magnitude and error in time.
+
+    The x-y trace is the decoded home-vector tip, not the animal's world path.
+    Equal aspect preserves angles; inverted y follows the task's +y-down convention.
+    Dotted connectors compare predictions and targets at the same timestamps.
+    """
+    xy, magnitude, error = axes
+    for model_index, (label, prediction, target, dt) in enumerate(cases):
+        p, y = prediction.astype(float), target.astype(float)
+        times = np.arange(len(p)) * dt
+        marks = np.unique(np.rint(np.linspace(0, len(p) - 1, 5)).astype(int))
+        color = f"C{model_index}"
+        if model_index == 0:
+            xy.plot(y[:, 0], y[:, 1], "k--", label="True", gid="true-vector-tips")
+            xy.scatter(y[marks, 0], y[marks, 1], color="black", marker="x", s=25, zorder=4)
+            for j in marks:
+                xy.annotate(f"{times[j]:g} s", y[j], xytext=(-20, 5) if j == 0 else (5, 5),
+                            textcoords="offset points", fontsize=7)
+            magnitude.plot(times, np.linalg.norm(y, axis=1), "k--", label="True")
+            error.axhline(0, color="black", linestyle="--", linewidth=1, label="Zero error")
+        xy.plot(p[:, 0], p[:, 1], label=label, color=color, gid=f"vector-tips-{model_index}")
+        xy.scatter(p[marks, 0], p[marks, 1], color=color, s=20, zorder=4)
+        for j in marks:
+            xy.plot([y[j, 0], p[j, 0]], [y[j, 1], p[j, 1]], ":", color=color,
+                    linewidth=1, alpha=.7, gid="matched-time-error")
+        xy.annotate("", xy=p[-1], xytext=(0, 0),
+                    arrowprops=dict(arrowstyle="->", color=color, alpha=.45, linewidth=1))
+        magnitude.plot(times, np.linalg.norm(p, axis=1), label=label, color=color,
+                       gid=f"magnitude-{model_index}")
+        error.plot(times, np.linalg.norm(p - y, axis=1), label=label, color=color,
+                   gid=f"vector-error-{model_index}")
+    xy.set(title="Long path: home-vector tips", xlabel="Home x (mm)", ylabel="Home y (mm; +y down)")
+    xy.set_aspect("equal", adjustable="box")
+    if not xy.yaxis_inverted():
+        xy.invert_yaxis()
+    xy.text(.02, .02, "Dotted gaps join equal times", transform=xy.transAxes, fontsize=7,
+            bbox=dict(facecolor="white", alpha=.8, edgecolor="none"))
+    magnitude.set(title="Long path: magnitude", xlabel="Time (s)", ylabel="Home-vector magnitude (mm)")
+    error.set(title="Long path: vector error", xlabel="Time (s)", ylabel="Vector error (mm)")
+    for ax in axes:
+        ax.grid(alpha=.2)
+        ax.legend(fontsize=7)
+
+
+def plot_long_path(cases, output):
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5), layout="constrained")
+    draw_long_paths(axes, cases)
+    for extension in ("png", "pdf"):
+        fig.savefig(output / f"long_path.{extension}", dpi=180)
+    plt.close(fig)
+
+
 def plot_comparison(audits, arrays, report):
-    fig, axes = plt.subplots(2, 3, figsize=(15, 8), layout="constrained")
+    fig, axes = plt.subplots(2, 4, figsize=(20, 9), layout="constrained")
+    cases = []
     for model_index, (label, audit, (predictions, targets)) in enumerate(zip(report["model_labels"].values(), audits, arrays)):
         rows, dt = audit.groups["challenge"], audit.task["dt_s"]
         long = next(i for i, row in enumerate(rows) if row["family"] == "challenge-long-64")
-        t = np.arange(len(predictions[long])) * dt
+        cases.append((label, predictions[long], targets[long], dt))
         color = f"C{model_index}"
-        axes[0, 0].plot(t, np.linalg.norm(predictions[long], axis=1), label=label, color=color)
-        if model_index == 0:
-            axes[0, 0].plot(t, np.linalg.norm(targets[long], axis=1), "k--", label="True")
         for i, row in enumerate(rows):
             if row["family"] == "challenge-pause-5":
                 onset = round(row["suffix_start_s"] / dt)
                 time = np.arange(len(predictions[i]) - onset) * dt
-                direction = "backward" if row["protocol"][0][2] < 0 else "forward"
-                ax = axes[0, 1] if direction == "backward" else axes[0, 2]
+                ax = axes[0, 3] if row["protocol"][0][2] < 0 else axes[1, 3]
                 ax.plot(time, np.linalg.norm(predictions[i][onset:].astype(float) - targets[i][onset:], axis=1), label=label, color=color)
             if row["kind"] == "closed_loop":
                 time = np.arange(len(predictions[i])) * dt
-                for j, component in enumerate(("x", "y")):
+                for j in range(2):
                     axes[1, j].plot(time, predictions[i][:, j] - targets[i][:, j], label=label, color=color)
             if row["family"] == "challenge-world-equivalent":
                 time = np.arange(len(predictions[i])) * dt
                 axes[1, 2].plot(time, np.linalg.norm(predictions[i].astype(float) - targets[i], axis=1),
                                  label=f"{label}, {row['kind']}", color=color,
                                  linestyle="-" if row["kind"] == "forward" else "--")
-    titles = ["Long straight path", "Pause after backward walking", "Pause after forward walking",
-              "Square-loop x error", "Square-loop y error", "Same world path: vector errors"]
-    labels = ["Predicted magnitude (mm)", "Vector error (mm)", "Vector error (mm)",
-              "Signed component error (mm)", "Signed component error (mm)", "Vector error (mm)"]
-    for ax, title, ylabel in zip(axes.flat, titles, labels):
-        ax.set(title=title, xlabel="Time (s)", ylabel=ylabel)
+    draw_long_paths(axes[0, :3], cases)
+    for ax, title, xlabel, ylabel in [
+            (axes[0, 3], "Pause after backward walking", "Time since pause onset (s)", "Vector error (mm)"),
+            (axes[1, 3], "Pause after forward walking", "Time since pause onset (s)", "Vector error (mm)"),
+            (axes[1, 0], "Square-loop x error", "Time (s)", "Signed component error (mm)"),
+            (axes[1, 1], "Square-loop y error", "Time (s)", "Signed component error (mm)"),
+            (axes[1, 2], "Same world path: vector errors", "Time (s)", "Vector error (mm)")]:
+        ax.set(title=title, xlabel=xlabel, ylabel=ylabel)
         ax.grid(alpha=.2)
-        ax.legend(fontsize=8)
-    axes[0, 1].set_xlabel("Time since pause onset (s)")
-    axes[0, 2].set_xlabel("Time since pause onset (s)")
-    fig.savefig(audits[1].out / "comparison.png", dpi=180)
-    fig.savefig(audits[1].out / "comparison.pdf")
+        ax.legend(fontsize=7)
+    fig.savefig(audits[-1].out / "comparison.png", dpi=180)
+    fig.savefig(audits[-1].out / "comparison.pdf")
     plt.close(fig)
+    plot_long_path(cases, audits[-1].out)
     fig, ax = plt.subplots(figsize=(7, 4), layout="constrained")
     for key, label in report["model_labels"].items():
         h = report[key]["validation_history"]
@@ -227,7 +285,7 @@ def plot_comparison(audits, arrays, report):
         ax.set_title("Different validation sets: compare trends within each curve")
     ax.grid(alpha=.2)
     ax.legend()
-    fig.savefig(audits[1].out / "validation_history.png", dpi=180)
+    fig.savefig(audits[-1].out / "validation_history.png", dpi=180)
     plt.close(fig)
 
 

@@ -22,6 +22,9 @@ at the update limit. Reaching the reference accuracy remains an experimental
 question; continuing the unchanged objective tests whether more optimization
 can close that gap.
 
+The [checkpoint challenge evaluator](cx_home_vector_checkpoint_evaluation.md)
+can inspect an independent CPU snapshot while the continuation is running.
+
 For a first extension, run **1,500 additional updates**, reaching **2,000 total**:
 
 ```bash

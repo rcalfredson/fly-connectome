@@ -97,35 +97,36 @@ def analyze(audit):
             terminal_error_mm=float(np.linalg.norm(p[-1]-y[-1])), metrics=metrics([p],[y])))
 
     # Plot predesignated diagnostic protocols, not post-hoc best examples.
-    fig,axes = plt.subplots(2,2,figsize=(11,7),layout='constrained')
+    from .compare import draw_long_paths, plot_long_path
+    fig,axes = plt.subplots(2,3,figsize=(15,8),layout='constrained')
     pred,truth=arrays['challenge']
+    long = next(i for i, row in enumerate(groups['challenge']) if row['family'] == 'challenge-long-64')
+    cases = [(f"Predicted (update {saved['selected_update']})", pred[long], truth[long], task['dt_s'])]
+    draw_long_paths(axes[0], cases)
     for i,row in enumerate(groups['challenge']):
         t=np.arange(len(pred[i]))*task['dt_s']
-        if row['family']=='challenge-long-64':
-            axes[0,0].plot(t,np.linalg.norm(truth[i],axis=1),'k--',label='True')
-            axes[0,0].plot(t,np.linalg.norm(pred[i],axis=1),label='Predicted')
         if row['family']=='challenge-pause-5':
             sign='negative prefix' if row['protocol'][0][2] < 0 else 'positive prefix'
-            line=axes[0,1].plot(t,pred[i][:,0],label=f'Predicted, {sign}')[0]
-            axes[0,1].plot(t,truth[i][:,0],'--',color=line.get_color())
+            line=axes[1,0].plot(t,pred[i][:,0],label=f'Predicted, {sign}')[0]
+            axes[1,0].plot(t,truth[i][:,0],'--',color=line.get_color())
         if row['family']=='challenge-square':
-            axes[1,0].plot(t,truth[i][:,0],'k--',label='True x')
-            axes[1,0].plot(t,pred[i][:,0],label='Predicted x')
-            axes[1,0].plot(t,truth[i][:,1],color='gray',linestyle='--',label='True y')
-            axes[1,0].plot(t,pred[i][:,1],label='Predicted y')
+            axes[1,1].plot(t,truth[i][:,0],'k--',label='True x')
+            axes[1,1].plot(t,pred[i][:,0],label='Predicted x')
+            axes[1,1].plot(t,truth[i][:,1],color='gray',linestyle='--',label='True y')
+            axes[1,1].plot(t,pred[i][:,1],label='Predicted y')
         if row['family']=='challenge-world-equivalent':
-            axes[1,1].plot(t,np.linalg.norm(pred[i]-truth[i],axis=1),label=row['kind'])
-    for ax,title,ylabel in zip(axes.flat,
-        ['Long straight path: magnitude saturates','Opposite histories, identical pause inputs',
+            axes[1,2].plot(t,np.linalg.norm(pred[i]-truth[i],axis=1),label=row['kind'])
+    for ax,title,ylabel in zip(axes[1],
+        ['Opposite histories, identical pause inputs',
          'Square loop: residual at return home','Same world path, different body motions'],
-        ['Home-vector magnitude (mm)','Home-vector x component (mm)',
-         'Home-vector component (mm)','Vector error (mm)']):
+        ['Home-vector x component (mm)','Home-vector component (mm)','Vector error (mm)']):
         ax.set(title=title,xlabel='Time (s)',ylabel=ylabel)
         ax.grid(alpha=.2)
         ax.legend(fontsize=8)
     pause = next(r['suffix_start_s'] for r in groups['challenge'] if r['family']=='challenge-pause-5')
-    axes[0,1].axvline(pause,color='gray',linewidth=1)
+    axes[1,0].axvline(pause,color='gray',linewidth=1)
     fig.savefig(out/'diagnostics.png',dpi=180)
     fig.savefig(out/'diagnostics.pdf')
     plt.close(fig)
+    plot_long_path(cases, out)
     write_json(out/'audit.json',report)

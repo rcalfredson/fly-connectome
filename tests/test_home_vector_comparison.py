@@ -108,3 +108,38 @@ def test_validation_plot_warns_about_actual_membership_not_permission_flag(tmp_p
         plot_comparison((audit, audit), ((truth, truth), (truth, truth)), report)
         title = calls[-1].axes[0].get_title()
         assert ('Different validation sets' in title) == (not matching)
+
+
+def test_joint_long_path_view_distinguishes_equal_magnitudes_with_wrong_direction():
+    import matplotlib.pyplot as plt
+    from fly_connectome.home_vector.analysis.compare import draw_long_paths
+    target = np.column_stack((np.arange(5.), np.zeros(5)))
+    rotated = np.column_stack((np.zeros(5), np.arange(5.)))
+    fig, axes = plt.subplots(1, 3)
+    draw_long_paths(axes, [('Correct', target, target, 1.), ('Wrong direction', rotated, target, 1.)])
+    magnitude = {line.get_gid(): line for line in axes[1].lines}
+    np.testing.assert_array_equal(magnitude['magnitude-0'].get_ydata(), magnitude['magnitude-1'].get_ydata())
+    error = {line.get_gid(): line for line in axes[2].lines}
+    np.testing.assert_array_equal(error['vector-error-0'].get_ydata(), np.zeros(5))
+    np.testing.assert_allclose(error['vector-error-1'].get_ydata(), np.arange(5.) * np.sqrt(2))
+    tips = {line.get_gid(): line for line in axes[0].lines if line.get_gid() != 'matched-time-error'}
+    np.testing.assert_array_equal(tips['vector-tips-1'].get_xydata(), rotated)
+    connectors = [line for line in axes[0].lines if line.get_gid() == 'matched-time-error']
+    np.testing.assert_array_equal(connectors[-1].get_xydata(), [target[-1], rotated[-1]])
+    assert np.linalg.norm(np.diff(connectors[-1].get_xydata(), axis=0)) == np.sqrt(32)
+    assert axes[0].get_aspect() == 1.
+    assert axes[0].yaxis_inverted()
+    assert {text.get_text() for text in axes[0].texts} >= {'0 s', '1 s', '2 s', '3 s', '4 s'}
+    plt.close(fig)
+
+
+def test_joint_long_path_view_handles_zero_vectors_without_inventing_direction():
+    import matplotlib.pyplot as plt
+    from fly_connectome.home_vector.analysis.compare import draw_long_paths
+    target = np.zeros((5, 2))
+    fig, axes = plt.subplots(1, 3)
+    draw_long_paths(axes, [('At home', target, target, .5)])
+    for axis in axes:
+        for line in axis.lines:
+            assert np.isfinite(line.get_xydata()).all()
+    plt.close(fig)
