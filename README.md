@@ -1259,6 +1259,28 @@ versioned prediction, perturbation, direction-statistics and network-change
 audits with explicit run/data/output paths. Historical experiment artifacts
 remain outside Git; the tools verify bundle hashes and preserve their inputs.
 
+The [frozen activity recorder and atlas](docs/cx_home_vector_activity.md) saves
+all neural rates and PFN inputs for the standard challenges, with per-neuron
+heatmaps and signed population contributions through the unchanged decoder.
+The [follow-up activity checks](docs/cx_home_vector_activity_checks.md) compare
+contributions across movement conditions, all-neuron readout removal versus
+silencing, and extended pauses with small state perturbations.
+The [raw-rate and restart probes](docs/cx_home_vector_raw_activity_and_restart.md)
+track highest-rate units across straight, multi-segment and curved paths, and
+measure absolute versus pause-referenced state norms when walking resumes.
+The [PFN input tuning atlas](docs/cx_home_vector_input_tuning.md) maps every
+dynamic unit's direct PFN inputs to zero-state onset tuning, with separate
+pattern, raw-rate and matched-stationary-subtracted views.
+The [history-dependent tuning probes](docs/cx_home_vector_history_tuning.md)
+compare identical movement inputs after stationary, forward and backward
+histories, with copied endpoint states and matched heading-only controls.
+The [selected-trajectory follow-up](docs/cx_home_vector_trajectory_tuning.md)
+tests five mixed/curved-path cases with identical probes, separating activity
+offset, movement-response amplitude and tuning-shape differences.
+The [incoming-drive audit](docs/cx_home_vector_incoming_drive.md) traces those
+states to signed PFN, recurrent-population and individual presynaptic inputs,
+with separate accounting for the target neuron's own carried-over activity.
+
 The [expansion and learned-input design discussion](docs/cx_home_vector_expansion_and_learned_inputs.md)
 outlines a bounded vDeltaE-upstream candidate pool, a memoryless learned PFN
 encoder, and comparisons separating anatomy changes from encoding changes.
