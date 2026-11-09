@@ -62,7 +62,7 @@ class HomeVectorNetwork(nn.Module):
         weight = effective.new_zeros(self.input_size + self.size, self.size)
         return weight.index_put((self.pre, self.post), effective)
 
-    def forward(self, pfn, dt, initial=None, reset_at=None):
+    def forward(self, pfn, dt, initial=None, reset_at=None, silence_mask=None):
         if (pfn.ndim != 3 or pfn.shape[2] != self.input_size or pfn.shape[1] < 2
                 or not np.isfinite(dt) or dt <= 0 or dt > .05 / 20 + 1e-12):
             raise ValueError("Require batch/time/PFN input and dt <= 0.0025 s.")
@@ -71,6 +71,13 @@ class HomeVectorNetwork(nn.Module):
         state = pfn.new_zeros(pfn.shape[0], self.size) if initial is None else initial
         if state.shape != (pfn.shape[0], self.size):
             raise ValueError("Initial state has wrong shape.")
+        # Frozen-model causal probes only: clamp selected units before recording
+        # each state and before they can drive another unit. Default is unchanged.
+        if silence_mask is not None:
+            if (torch.is_grad_enabled() or silence_mask.dtype != torch.bool
+                    or silence_mask.device != pfn.device
+                    or silence_mask.shape not in ((self.size,), (pfn.shape[0], self.size))):
+                raise ValueError("Silencing requires no_grad and a boolean neuron or batch/neuron mask.")
         weight = self.weights()
         input_drive = pfn @ weight[:self.input_size]
         # Expose time slices together: unbind's backward assembles their
@@ -110,6 +117,8 @@ class HomeVectorNetwork(nn.Module):
         for n in range(pfn.shape[1]):
             if n == reset_at:
                 state = torch.zeros_like(state)
+            if silence_mask is not None:
+                state = state.masked_fill(silence_mask, 0.)
             states.append(state)
             if n + 1 < pfn.shape[1]:
                 target = torch.relu(self.bias[self.type_index] + input_steps[n] + state @ recurrent_weight)

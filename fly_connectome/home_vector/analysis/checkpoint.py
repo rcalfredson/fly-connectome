@@ -26,7 +26,8 @@ def capture(run, source, snapshot_key="current"):
     if snapshot_key not in ('current', 'reference'):
         raise ValueError('Require current or reference snapshot key.')
     kind = json.loads(stable_read(run / 'manifest.json')).get('kind')
-    if kind == 'home_vector_challenge_snapshot_v1':
+    if kind in ('home_vector_challenge_snapshot_v1', 'home_vector_activity_v1',
+                'home_vector_activity_paths_v1'):
         verify_bundle(run)
         if not (run / f'{snapshot_key}_metadata.json').exists():
             raise ValueError(f'Snapshot bundle has no saved {snapshot_key} checkpoint.')
@@ -39,7 +40,9 @@ def capture(run, source, snapshot_key="current"):
         snap = dict(manifest=metadata['run_manifest'], circuit=metadata['circuit'],
                     checkpoint=checkpoint, blob=blob, history=metadata['history'],
                     checkpoint_sha256=sha, training_config=metadata['training_config'],
-                    input_kind='saved_challenge_snapshot', snapshot_key=snapshot_key)
+                    input_kind=({'home_vector_activity_v1': 'saved_activity_snapshot',
+                                 'home_vector_activity_paths_v1': 'saved_activity_paths_snapshot'}
+                                .get(kind, 'saved_challenge_snapshot')), snapshot_key=snapshot_key)
     else:
         if snapshot_key != 'current':
             raise ValueError('Snapshot key applies only to a saved challenge evaluation bundle.')
@@ -213,7 +216,7 @@ def analyze(args):
     if 'reference' in snaps:
         validate_pair(snaps['reference'], snaps['current'], args.allow_task_differences)
     frozen_paths = {source for _, source in paths.values()}
-    frozen_paths.update(snap['run'] for snap in snaps.values() if snap['input_kind'] == 'saved_challenge_snapshot')
+    frozen_paths.update(snap['run'] for snap in snaps.values() if snap['input_kind'] != 'training_run')
     frozen = {str(p): digest(p) for source in frozen_paths for p in source.iterdir() if p.is_file()}
     output, record = begin(output, 'home_vector_challenge_snapshot_v1',
         source=str(paths['current'][1]), source_manifest_sha256=digest(paths['current'][1] / 'manifest.json'),
