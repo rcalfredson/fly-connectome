@@ -1,0 +1,25 @@
+{
+  "source_url": "https://authors.library.caltech.edu/records/73yvc-je285/files/41586_2021_4191_Fig8_ESM.webp?download=1",
+  "source_sha256": "0948bc59cd2a7dda5101f7a461664becca46f887a02c05f77a265fa8672f94a6",
+  "figure": "Lu et al. 2022, Extended Data Fig. 4a",
+  "image_size": [2062, 1920],
+  "coordinate_convention": "Original image pixels; x rightward, y downward. Tick centers manually identified. Each cell has its own affine calibration.",
+  "sampling_note": "Fixed half-mm/s samples of the displayed curves. Some fall on connecting segments; original bin definitions and raw observations unavailable. Samples are not independent experimental observations.",
+  "pixel_tolerance": 2,
+  "panels": [
+    {"cell": 1, "x_pixels": [107, 597], "x_values": [-1, 5], "y_pixels": [290.5, 68], "y_values": [0, 30], "crop_y": [65, 293]},
+    {"cell": 2, "x_pixels": [772, 1263], "x_values": [-1, 5], "y_pixels": [289.5, 63.5], "y_values": [0, 15], "crop_y": [60, 293]},
+    {"cell": 3, "x_pixels": [105, 596], "x_values": [-1, 5], "y_pixels": [556, 330.5], "y_values": [0, 20], "crop_y": [326, 559]},
+    {"cell": 4, "x_pixels": [772, 1263], "x_values": [-1, 5], "y_pixels": [556, 330.5], "y_values": [0, 15], "crop_y": [326, 559]},
+    {"cell": 5, "x_pixels": [105, 596], "x_values": [-1, 5], "y_pixels": [820.5, 632.5], "y_values": [10, 30], "crop_y": [593, 823]},
+    {"cell": 6, "x_pixels": [772, 1263], "x_values": [-1, 5], "y_pixels": [820.5, 608.5], "y_values": [0, 4], "crop_y": [593, 823]},
+    {"cell": 7, "x_pixels": [105, 596], "x_values": [-1, 5], "y_pixels": [1083.5, 896.5], "y_values": [0, 10], "crop_y": [855, 1087]},
+    {"cell": 8, "x_pixels": [772, 1263], "x_values": [-1, 5], "y_pixels": [1084, 858], "y_values": [0, 8], "crop_y": [855, 1087]},
+    {"cell": 9, "x_pixels": [105, 596], "x_values": [-1, 5], "y_pixels": [1348.5, 1138.5], "y_values": [0, 20], "crop_y": [1118, 1352]},
+    {"cell": 10, "x_pixels": [772, 1263], "x_values": [-1, 5], "y_pixels": [1348.5, 1122.5], "y_values": [0, 40], "crop_y": [1118, 1352]},
+    {"cell": 11, "x_pixels": [105, 596], "x_values": [-1, 5], "y_pixels": [1603.5, 1391.5], "y_values": [0, 15], "crop_y": [1374, 1607]},
+    {"cell": 12, "x_pixels": [772, 1263], "x_values": [-1, 5], "y_pixels": [1603.5, 1378], "y_values": [5, 25], "crop_y": [1374, 1607]},
+    {"cell": 13, "x_pixels": [105, 596], "x_values": [-1, 5], "y_pixels": [1860.5, 1635], "y_values": [0, 3], "crop_y": [1631, 1864]},
+    {"cell": 14, "x_pixels": [772, 1263], "x_values": [-1, 5], "y_pixels": [1860.5, 1659.5], "y_values": [0, 1], "crop_y": [1631, 1864]}
+  ]
+}
