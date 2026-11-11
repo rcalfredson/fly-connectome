@@ -1280,6 +1280,10 @@ offset, movement-response amplitude and tuning-shape differences.
 The [incoming-drive audit](docs/cx_home_vector_incoming_drive.md) traces those
 states to signed PFN, recurrent-population and individual presynaptic inputs,
 with separate accounting for the target neuron's own carried-over activity.
+The [paired-state decoder-space analysis](docs/cx_home_vector_state_spaces.md)
+starts the analysis reboot by splitting matched curved-path activity differences
+into decoder-visible and cancelling components, alongside input checks and
+home-vector errors.
 
 The [expansion and learned-input design discussion](docs/cx_home_vector_expansion_and_learned_inputs.md)
 outlines a bounded vDeltaE-upstream candidate pool, a memoryless learned PFN
