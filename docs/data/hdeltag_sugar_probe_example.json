@@ -1,0 +1,13 @@
+{
+  "status": "uncalibrated_engineering_example",
+  "selection_basis": "Verify experiment wiring only; not fitted to physiology or decoding accuracy.",
+  "response": {
+    "rise_tau_s": 1.0,
+    "recovery_tau_s": 300.0,
+    "relaxation_rate_per_s": 1.0,
+    "reference_activity": 0.0
+  },
+  "event_times_s": [8.0],
+  "pause_at_s": 8.0,
+  "pause_duration_s": 1.0
+}
