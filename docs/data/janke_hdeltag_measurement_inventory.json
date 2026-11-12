@@ -1,0 +1,17 @@
+{
+  "source_pdf_sha256": "5477fe83b8fce13de34b736123333b8f509524aa13e329c4b5111c98d50e879d",
+  "render_scale_to": 1800,
+  "image_size": [1391, 1800],
+  "review_pages": [39, 40, 41, 42, 45, 54, 56],
+  "padding_pixels": 1.5,
+  "units": "Displayed normalized calcium signal; not Hz or raw fluorescence",
+  "note": "Manual tick-center calibration and isolated bold population-mean dot patches. Individual fly dots are not reconstructed. Figure 3.1/3.8 windows compare one second before first drop with one second after last drop. Pixel envelopes are not biological intervals.",
+  "panels": [
+    {"name": "hdeltag_sugar_mean", "figure": "3.1i top", "page": 39, "color": "green", "y_pixels": [970, 869], "y_values": [0, 1], "before_patch": [969, 904, 978, 915], "after_patch": [996, 953, 1006, 963]},
+    {"name": "hdeltag_sugar_bump", "figure": "3.1i middle", "page": 39, "color": "green", "y_pixels": [1145, 1034], "y_values": [0, 0.45], "before_patch": [967, 1089, 977, 1098], "after_patch": [994, 1114, 1004, 1124]},
+    {"name": "hdeltag_speed_control_mean", "figure": "3.2a left", "page": 40, "color": "green", "y_pixels": [416, 272.5], "y_values": [0, 1], "before_patch": [448, 339, 458, 349], "after_patch": [487, 341, 496, 350]},
+    {"name": "hdeltag_speed_control_bump", "figure": "3.2a right", "page": 40, "color": "green", "y_pixels": [430.5, 272.5], "y_values": [0, 0.45], "before_patch": [679, 371, 688, 379], "after_patch": [718, 373, 728, 382]},
+    {"name": "vdeltae_sugar_mean", "figure": "3.8c top", "page": 56, "color": "purple", "y_pixels": [683, 569], "y_values": [0, 1.75], "before_patch": [1076, 653, 1085, 662], "after_patch": [1106, 629, 1115, 638]},
+    {"name": "vdeltae_sugar_bump", "figure": "3.8c middle", "page": 56, "color": "purple", "y_pixels": [863, 711.5], "y_values": [0, 0.7], "before_patch": [1077, 825, 1085, 833], "after_patch": [1107, 823, 1115, 832]}
+  ]
+}

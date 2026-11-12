@@ -1,0 +1,60 @@
+{
+  "reviewed_date": "2026-11-12",
+  "scope": "Public source discovery for Janke hDeltaG sugar-response measurements; no author contacted.",
+  "source_pdf_sha256": "5477fe83b8fce13de34b736123333b8f509524aa13e329c4b5111c98d50e879d",
+  "primary_pages": [
+    {
+      "url": "https://digitalcommons.rockefeller.edu/student_theses_and_dissertations/808/",
+      "finding": "Thesis record and abstract; no linked event-level dataset identified on record page. Direct PDF fetch returned 403; supplied local PDF used."
+    },
+    {
+      "url": "https://maimonlab.rockefeller.edu/publications/",
+      "finding": "Official publication/preprint list inspected; no matching Janke data release identified."
+    },
+    {
+      "url": "https://github.com/MaimonLab",
+      "finding": "Organization overview inspected; repository-name inventory checked with GitHub search."
+    }
+  ],
+  "github_searches": [
+    {
+      "query": "org:MaimonLab",
+      "returned_repositories": [
+        "MaimonLab/SiffPy",
+        "MaimonLab/cx-vector-inversion",
+        "MaimonLab/any2ufmf",
+        "MaimonLab/MyFirstPollRequest",
+        "MaimonLab/Converting_allo_goal_to_ego_steering",
+        "MaimonLab/Corrosiff",
+        "MaimonLab/SiffROI",
+        "MaimonLab/ROS-TCP-Endpoint",
+        "MaimonLab/MultiHarpPatina",
+        "MaimonLab/DeepLabCut-live",
+        "MaimonLab/corrosiff-python",
+        "MaimonLab/SiffTrac"
+      ],
+      "interpretation": "Twelve returned public repository records; none identified as Janke sugar-response data. General imaging tools are not evidence of availability of this dataset."
+    },
+    {
+      "query": "\"leaky vector integration\"",
+      "returned_repositories": [],
+      "interpretation": "No repository returned by this title search; not proof of data absence."
+    }
+  ],
+  "web_query_families": [
+    "\"A Neuronal Circuit Motif for Leaky Vector Integration\" data code",
+    "\"Janke\" \"hDeltaG\" data",
+    "\"Janke\" \"hΔG\" data",
+    "\"Abby Janke\" data neuroscience",
+    "\"Janke\" site:zenodo.org",
+    "\"hDeltaG\" site:figshare.com OR site:datadryad.org OR site:osf.io",
+    "\"Janke\" integration site:biorxiv.org"
+  ],
+  "not_evidence": [
+    "Other authors' datasets for PFNa/FC2 or unrelated neurons are not substituted for hDeltaG sugar physiology.",
+    "LLM-generated connectome literature pages were discovery hits only, not physiological evidence.",
+    "The similarly named maimonlab.com site is a different laboratory and was excluded."
+  ],
+  "availability_conclusion": "Event-level hDeltaG sugar data not located in this bounded public search. The supplied thesis supports additional figure-derived constraints. Raw-data availability remains unknown.",
+  "model_changes": false
+}
