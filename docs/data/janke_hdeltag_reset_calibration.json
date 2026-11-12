@@ -1,0 +1,18 @@
+{
+  "figure": "Janke thesis Figure 3.4b, left: pooled spike-rate mean versus time",
+  "source_pdf_sha256": "5477fe83b8fce13de34b736123333b8f509524aa13e329c4b5111c98d50e879d",
+  "pdf_page": 42,
+  "printed_page": 33,
+  "render_scale_to": 1800,
+  "image_size": [1391, 1800],
+  "x_pixels": [471.5, 588.5],
+  "x_seconds": [0, 1000],
+  "y_pixels": [596.5, 457.25],
+  "y_hz": [0, 15],
+  "crop_y": [455, 600],
+  "half_strip_width_pixels": 1,
+  "dark_threshold": 85,
+  "envelope_padding_pixels": 1,
+  "sample_seconds": [-200, -150, -100, -50, -25, 40, 60, 120, 240, 360, 480, 600, 900, 1100],
+  "note": "Manual tick-center calibration. Samples estimate the displayed pooled black mean, not individual events. Omit the event edge: temporal resolution does not identify fast reset kinetics. Pixel envelopes describe extraction, not biological uncertainty."
+}
