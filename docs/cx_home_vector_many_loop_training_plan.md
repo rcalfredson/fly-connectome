@@ -1,6 +1,14 @@
 # Planned successor: learning over diverse returns
 
-Status: design only. No new dataset or scientific training run has been started.
+The active primary delivery policy and launch command are now specified in
+[cx_home_vector_reliable_return_training.md](cx_home_vector_reliable_return_training.md):
+the sugar arm receives every eligible home-patch reentry and the original arm
+always disables its gate. Schedule variants and counts below are a record of
+the earlier planning stage, not the current primary training specification.
+
+Status: dataset construction and engineering checks are implemented; no full
+scientific training run has started. Realized counts, normalization and commands
+are in [cx_home_vector_diverse_return_training.md](cx_home_vector_diverse_return_training.md).
 The completed seed-0 paired run, its source files, original encoder, frozen
 checkpoint and all archives remain unchanged.
 The scope was broadened on 13 November 2026 from repeated regular loops to
