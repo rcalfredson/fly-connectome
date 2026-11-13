@@ -37,12 +37,14 @@ def load_selected_models(training):
     history=json.loads((training/'history.json').read_text())
     circuit=Circuit(**json.loads((training/'circuit.json').read_text()))
     response=SugarResponse(**config['response'])
+    selection_key=config.get('selection_score_key','vector_rmse_mm')
+    if selection_key not in ('vector_rmse_mm','selection_score'):raise ValueError('Unknown checkpoint-selection score.')
     models,selection={},{}
     for name in ('original','sugar'):
         path=training/(name+'_best.pt')
         checkpoint=torch.load(path,weights_only=False,map_location='cpu')
         chosen=min((r for r in history if name+'_validation' in r),
-                   key=lambda r:r[name+'_validation']['vector_rmse_mm'])
+                   key=lambda r:r[name+'_validation'][selection_key])
         if (checkpoint['update']!=comparison[name]['selected_update']
                 or checkpoint['update']!=chosen['update']
                 or checkpoint['validation']!=chosen[name+'_validation']

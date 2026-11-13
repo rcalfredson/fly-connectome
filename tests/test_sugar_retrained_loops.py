@@ -53,6 +53,23 @@ def test_inconsistent_selection_is_rejected_even_when_artifact_hashes_match(sele
     with pytest.raises(ValueError,match='validation history'):load_selected_models(selected_bundle)
 
 
+def test_normalized_selection_can_choose_a_different_checkpoint_than_raw_rmse(selected_bundle):
+    p=selected_bundle
+    config=json.loads((p/'training_config.json').read_text());config['selection_score_key']='selection_score'
+    history=json.loads((p/'history.json').read_text());comparison=json.loads((p/'comparison.json').read_text())
+    for name in ('original','sugar'):
+        history[0][name+'_validation']['selection_score']=.9
+        history[1][name+'_validation']['selection_score']=.2
+        checkpoint=torch.load(p/(name+'_best.pt'),weights_only=False,map_location='cpu')
+        checkpoint.update(update=2,validation=history[1][name+'_validation'])
+        torch.save(checkpoint,p/(name+'_best.pt'))
+        comparison[name]=dict(selected_update=2,validation=checkpoint['validation'])
+    for filename,value in [('training_config.json',config),('history.json',history),('comparison.json',comparison)]:write_json(p/filename,value)
+    finish(p,json.loads((p/'manifest.json').read_text()))
+    _,_,_,_,selection=load_selected_models(p)
+    assert selection['original']['update']==2  # Raw original RMSE favored update 1.
+
+
 def test_zero_output_can_have_perfect_closure_but_nonzero_tracking_error():
     target=np.array([[0.,0.],[1.,2.],[0.,0.]])
     rows=loop_metrics('toy','original_trained',np.zeros_like(target),np.ones((3,2)),target,
