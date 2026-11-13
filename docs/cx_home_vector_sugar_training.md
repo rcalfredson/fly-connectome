@@ -83,8 +83,9 @@ they are not exclusively errors at geometric returns. The test vector RMSE is
 about 1.18% lower for sugar, while validation vector RMSE is slightly higher.
 One seed with a small aggregate difference does not establish a reliable sugar
 advantage, convergence, or preservation of the prior frozen circuit's long-loop
-benefit. Condition-specific assessment and extended-loop replay of these newly
-trained checkpoints remain the next analysis.
+benefit. Condition-specific assessment remains a follow-up. Extended-loop replay
+of these newly trained checkpoints is now documented in
+[cx_home_vector_sugar_retrained_loops.md](cx_home_vector_sugar_retrained_loops.md).
 
 The older frozen-circuit decoder-only comparison used a different optimization
 history and objective. These results do not establish improvement over that

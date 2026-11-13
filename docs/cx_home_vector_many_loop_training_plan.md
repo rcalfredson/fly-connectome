@@ -1,13 +1,15 @@
-# Planned successor: learning over repeated returns
+# Planned successor: learning over diverse returns
 
 Status: design only. No new dataset or scientific training run has been started.
 The completed seed-0 paired run, its source files, original encoder, frozen
 checkpoint and all archives remain unchanged.
+The scope was broadened on 13 November 2026 from repeated regular loops to
+diverse excursions and returns. Regular loops remain one reference class.
 
 ## Question
 
 Can original and sugar-response dynamics learn useful home-vector tracking
-when training explicitly includes repeated returns and post-sugar continuation?
+when training explicitly includes diverse repeated returns and post-sugar continuation?
 The existing run asks about shorter-return training; the proposed successor
 asks about longer-duration training. Neither asks that their losses diverge.
 
@@ -18,6 +20,13 @@ The small single-seed difference does not settle whether suppression improves
 generalization or extended-loop behavior after recurrent training.
 The previous frozen 16-loop diagnostic provides motivation, not a training
 target to optimize selectively or independent evidence from an untouched test.
+Evaluation of the selected jointly trained models now also shows that delivery
+limits long-loop drift, including in a same-weights gate-disabled comparison,
+but does not uniformly improve tracking relative to the earlier decoder-only
+refit. See `docs/cx_home_vector_sugar_retrained_loops.md`. This is consistent
+with limited training coverage but does not isolate a decoder deficit: both
+recurrent state dynamics and their readout may need to adapt. Longer and more
+varied training is a test of that possibility, not an assurance of improvement.
 
 ## Dataset proposal
 
@@ -31,26 +40,39 @@ split identities. Add independently generated repeated-return families:
 | Validation | 12 | 144 | 464 |
 | Test | 24 | 288 | 800 |
 
-- Each new family supplies 4-loop and 8-loop versions, forward/rightward body
+- Each new family supplies 4-return and 8-return versions, forward/rightward body
   traversal, and no-sugar/single-delivery/repeated-delivery schedules: 12 related
-  examples per family. No pauses are added to this first many-loop extension;
-  the retained two-loop examples already include pause controls.
-- Use randomized orientations, speeds of 0.5–2 mm/s, clockwise/counterclockwise
-  traversal, and regular polygons with 4, 8 or 24 sides. Initial loop periods
-  of 6 or 12 seconds keep segment boundaries aligned with the 0.0025-second
-  integration grid. Training durations then span 24–96 seconds. Stratify shape,
-  period and turn direction where family counts permit.
+  examples per family. The counts above remain the initial proposed budget.
+- Balance the new families across four route classes: regular polygon loops
+  for continuity with earlier experiments; retraced out-and-back excursions;
+  irregular multisegment excursions with different outward and homebound routes;
+  and sequences mixing excursions of different shapes, extents and durations.
+  A sequence's later excursions need not repeat its first excursion.
+- Vary world orientation, approach direction, speed (initially 0.5–2 mm/s),
+  and clockwise/counterclockwise turns where applicable. Retain forward/rightward
+  variants of the same world path. Initially target total durations of 24–96
+  seconds with all segment boundaries on the 0.0025-second integration grid.
+  Exact duration choices and realized counts must be sealed in the generated
+  manifest before training; irregular routes need not share a common lap period.
+- Include families with brief home dwell periods, and others that leave home
+  again and end away from it, within the same overall duration budget. Both
+  networks and every delivery variant of a family must have identical movement
+  and pause schedules. Keep the original short pause controls as well.
 - Keep every duration, traversal and delivery variant of a family in one split.
   Check exact protocols and geometric parent identities for leakage. Fresh test
   families at trained loop counts assess generalization to new path parameters.
-- Add a separate 16-loop extrapolation split from those test families: 144
-  examples, 96–192 seconds. Their 4/8-loop relatives remain in test, not training
+- Add a separate 16-return extrapolation split from those test families: initially
+  144 examples, targeting 96–192 seconds. Their 4/8-return relatives remain in test, not training
   or validation. These are related tests of extension, not independent samples.
   Retain the already inspected paths 8/9/14/15 as historical diagnostics.
 
-This is a restricted periodic-path experiment, not a demonstration of general
-path integration. Additional irregular trajectories and open-ended departures
-would be useful challenges after the first controlled comparison.
+Include held-out near-miss trajectories that pass close to home without entering
+the patch and pauses away from home. These are additional diagnostic controls,
+not a source of training/selection feedback. Keep related duration prefixes,
+rotations, body-direction variants and delivery variants within one split;
+splitting timestamps or obvious geometric copies does not create independent
+test families. Diverse route classes still do not establish general path
+integration or generalization beyond the chosen movement distribution.
 
 ## Sugar delivery and fixed physiology approximation
 
@@ -60,12 +82,19 @@ neither the network nor decoder true position, loop count or a closure flag.
 
 For new long examples, environmental reentry into the 0.1 mm patch after
 departure beyond 0.15 mm defines eligible contact. Single delivery uses the
-first contact; repeated delivery uses each nonfinal return contact. The new
+first contact; repeated delivery uses the first and later eligible contacts with subsequent
+continuation. Initial occupancy does not deliver sugar. No-sugar variants follow
+the identical movements but receive no deliveries. The new
 repeated-delivery protocol deliberately removes the previous 30-second minimum
 interval, which would otherwise skip most returns. This is an explicit delivery
 assumption, not an inferred physiological refractory period. Deliveries refresh
 the gate through maximum aggregation, without unbounded additive suppression.
 The retained two-loop examples keep their original event schedules.
+Contact is an effective delivery/consumption approximation. Do not use mere
+proximity or geometric closure to change neural state or the target. Contact
+at the patch edge can leave a small nonzero correct home vector. Geometry may
+be used to construct a route and environmental contacts, but only the resulting
+prescribed PFN activity and explicit sensory gate enter the network.
 
 ## Loss balance needs explicit attention
 
@@ -85,7 +114,7 @@ are target-energy measurements, not a causal decomposition of current gradients
 or proof that weighting caused the observed learning behavior.
 
 The proposed successor should distinguish four strata: existing other paths,
-existing long straight walks, two-loop returns, and many-loop returns. A concrete
+existing long straight walks, two-loop returns, and diverse repeated returns. A concrete
 starting recipe is equal sampling mass per stratum, equal family/variant mass
 within a stratum, and frozen training-only target-energy normalization:
 
@@ -104,9 +133,9 @@ re-estimating scales from validation data. Retain raw errors in mm separately.
 Keep the existing regularization coefficients initially, recording that changing
 task normalization changes their relative influence.
 
-This introduces both a duration expansion and a loss-balance change. The current
+This introduces duration/route expansion and a loss-balance change. The current
 run remains informative, but comparing it with the successor cannot attribute
-differences solely to longer examples. If that attribution is needed, add a
+differences solely to longer examples or route diversity. If that attribution is needed, add a
 shorter-only run with the same balancing policy: 25% existing other, 25% existing
 long straight, and 50% two-loop return sampling. It is an additional control,
 not a prerequisite for the paired original/sugar comparison on the expanded task.
