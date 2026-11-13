@@ -19,6 +19,8 @@ from .training_batches import length_groups
 from .analysis.sugar_decoder_data import validate_splits
 from .analysis.sugar_decoder_fit import family_weights
 from .analysis.sugar_response import SugarResponse, event_gate
+from . import diverse_returns
+from . import reliable_sugar
 
 
 def sugar_block(state, drives, gates, recurrent, bias, tau, mask, strength, reference, dt):
@@ -96,8 +98,9 @@ def prepared_batch(circuit,rows,dt,device,response):
     return x,y,mask,torch.as_tensor(gates,device=device,dtype=x.dtype)
 
 
-def evaluate(network,circuit,rows,dt,device,response,enabled,batch_size=16):
-    weights=family_weights(rows);total=terminal=0.
+def evaluate(network,circuit,rows,dt,device,response,enabled,batch_size=16,normalization=None):
+    weights=family_weights(rows) if normalization is None else diverse_returns.sampling_weights(rows)
+    total=terminal=normalized=0.;subsets={}
     order=sorted(range(len(rows)),key=lambda i:rows[i]['protocol'][-1][0])
     with torch.no_grad():
         for start in range(0,len(order),batch_size):
@@ -112,7 +115,23 @@ def evaluate(network,circuit,rows,dt,device,response,enabled,batch_size=16):
                 total+=weights[i]*float(per[j])
                 n=round(rows[i]['protocol'][-1][0]/dt)
                 terminal+=weights[i]*float(error[j,n])
-    return dict(vector_rmse_mm=float(np.sqrt(total)),endpoint_rms_error_mm=float(np.sqrt(terminal)))
+                if normalization is not None:
+                    group=diverse_returns.stratum(rows[i]);energy=normalization['target_energy_mm2'][group]
+                    normalized+=weights[i]*float(per[j])/energy
+                    if group not in subsets:subsets[group]=dict(mass=0.,mse=0.,endpoint=0.,count=0)
+                    s=subsets[group];s['mass']+=weights[i];s['mse']+=weights[i]*float(per[j])
+                    s['endpoint']+=weights[i]*float(error[j,n]);s['count']+=1
+    result=dict(vector_rmse_mm=float(np.sqrt(total)),endpoint_rms_error_mm=float(np.sqrt(terminal)))
+    if normalization is not None:
+        result.update(selection_score=float(normalized),selection_metric='mean_stratum_normalized_mse',
+            by_stratum={g:dict(count=s['count'],vector_rmse_mm=float(np.sqrt(s['mse']/s['mass'])),
+                endpoint_rms_error_mm=float(np.sqrt(s['endpoint']/s['mass'])),
+                normalized_mse=float(s['mse']/s['mass']/normalization['target_energy_mm2'][g])) for g,s in subsets.items()})
+    return result
+
+
+def checkpoint_score(score):
+    return score.get('selection_score',score['vector_rmse_mm'])
 
 
 def train(args):
@@ -120,9 +139,12 @@ def train(args):
         raise ValueError('Require positive update/batch/validation counts and nonnegative compile size.')
     if args.device=='cuda' and not torch.cuda.is_available():raise ValueError('CUDA unavailable.')
     if args.smoke and args.benchmark:raise ValueError('Choose smoke or full-workload benchmark, not both.')
+    if args.benchmark_longest and not args.benchmark:raise ValueError('Longest-batch check requires --benchmark.')
     data,output=Path(args.data).resolve(),Path(args.output).resolve()
     manifest=verify_bundle(data)
-    if manifest['kind']!='home_vector_sugar_decoder_data_v1':raise ValueError('Require derived sugar task.')
+    if manifest['kind'] not in ('home_vector_sugar_decoder_data_v1',diverse_returns.KIND,reliable_sugar.KIND):raise ValueError('Require derived sugar task.')
+    reliable=manifest['kind']==reliable_sugar.KIND
+    expanded=manifest['kind'] in (diverse_returns.KIND,reliable_sugar.KIND)
     task=json.loads((data/'task.json').read_text());source=Path(task['source'])
     for folder in (data,source,Path(task['activity']),Path(task['diagnostics'])):
         if output==folder or output.is_relative_to(folder) or folder.is_relative_to(output):
@@ -131,13 +153,29 @@ def train(args):
     circuit=Circuit(**json.loads((source/'circuit.json').read_text()))
     scale=json.loads((source/'task.json').read_text())['length_scale_mm'];dt=task['dt_s']
     groups=json.loads((data/'trajectories.json').read_text());validate_splits(groups)
+    normalization=None
+    if expanded:
+        diverse_returns.validate(groups)
+        if reliable:
+            if task.get('delivery_policy',{}).get('mode')!=reliable_sugar.POLICY:raise ValueError('Require explicit reliable delivery policy.')
+            reliable_sugar.validate(groups,dt)
+        normalization=json.loads((data/'loss_plan.json').read_text())
+        if (normalization['source_split']!='train' or normalization['dt_s']!=dt
+                or set(normalization['target_energy_mm2'])!=set(diverse_returns.STRATA)
+                or not all(np.isfinite(v) and v>0 for v in normalization['target_energy_mm2'].values())):
+            raise ValueError('Require frozen positive training-only target energies.')
     response=SugarResponse(**json.loads((data/'response_config.json').read_text())['response'])
     if args.smoke:
         # Exercise actual post-event dynamics, not a truncated pre-sugar prefix.
         for split in ('train','validation'):
             rows=groups[split]
-            groups[split]=[min((r for r in rows if r['group']=='existing'),key=lambda r:r['protocol'][-1][0]),
-                min((r for r in rows if r['arm']=='continuous_sugar'),key=lambda r:r['protocol'][-1][0])]
+            if expanded:
+                groups[split]=[min((r for r in rows if diverse_returns.stratum(r)==g
+                    and (g!='diverse_return' or len(r['sugar_events_s'])>1)),key=lambda r:r['protocol'][-1][0])
+                    for g in diverse_returns.STRATA]
+            else:
+                groups[split]=[min((r for r in rows if r['group']=='existing'),key=lambda r:r['protocol'][-1][0]),
+                    min((r for r in rows if r['arm']=='continuous_sugar'),key=lambda r:r['protocol'][-1][0])]
     torch.set_num_threads(1);torch.manual_seed(args.seed);rng=np.random.default_rng(args.seed)
     networks={k:SugarTrainingNetwork(circuit,response,args.seed).to(args.device) for k in ('original','sugar')}
     for key,value in networks['original'].state_dict().items():
@@ -150,14 +188,15 @@ def train(args):
     if any(digest(p)!=h for p,h in frozen.items()):raise ValueError('An archived input changed.')
     output,record=begin(output,'home_vector_sugar_paired_training_v1',data=str(data),seed=args.seed,
         updates=args.updates,batch_size=args.batch_size,device=args.device,smoke=args.smoke,
-        benchmark=args.benchmark,
+        benchmark=args.benchmark,benchmark_longest=args.benchmark_longest,
         validate_every=args.validate_every,compile_block=args.compile_block,backend=args.backend)
     runtime=[Path(__file__),Path(__file__).with_name('model.py'),
              Path(__file__).with_name('training_batches.py'),Path(__file__).with_name('data.py'),
              Path(__file__).with_name('__main__.py'),
              Path(__file__).parent/'analysis'/'sugar_response.py',
              Path(__file__).parent/'analysis'/'sugar_decoder_data.py',
-             Path(__file__).parent/'analysis'/'sugar_decoder_fit.py']
+             Path(__file__).parent/'analysis'/'sugar_decoder_fit.py',
+             Path(__file__).with_name('diverse_returns.py'),Path(__file__).with_name('reliable_sugar.py')]
     code_hashes={str(p):digest(p) for p in runtime}
     record.update(immutable_input_sha256=frozen,implementation_sha256=code_hashes,torch=torch.__version__)
     write_json(output/'manifest.json',record)
@@ -166,20 +205,26 @@ def train(args):
         write_json(output/'circuit.json',circuit.as_dict())
         write_json(output/'training_config.json',dict(response=response.__dict__,dt_s=dt,length_scale_mm=scale,
             initialization='Matched from scratch, seed-shared; not the previously optimized checkpoint.',
-            sampling='50/50 existing/return domain, equal family then variant; same draws in both arms.',
+            sampling=('Equal four strata, equal family then variant; same draws in both arms.' if expanded
+                else '50/50 existing/return domain, equal family then variant; same draws in both arms.'),
             trainable=['all anatomical edge coefficients','population bias','population tau','decoder','intercept'],
             fixed=['PFN encoder','anatomical edge support and counts','sugar response parameters'],
             optimizer='Adam',learning_rate=.001,clip_norm=1.,full_trajectory_bptt=True,
             penalties=dict(activity=1e-5,edge_prior=1e-4,decoder=1e-5),
-            selection='Independent validation-minimum balanced MSE at identical update checkpoints.',
+            selection='Independent validation-minimum score at identical update checkpoints.',
+            selection_score_key='selection_score' if expanded else 'vector_rmse_mm',normalization=normalization,
+            delivery_policy=task.get('delivery_policy'),original_network_gate='Always zero',
             test_policy='Test evaluated once after selection; diagnostic/challenge never select.',
             smoke=args.smoke,benchmark=args.benchmark))
         for name,net in networks.items():torch.save(net.state_dict(),output/(name+'_initial.pt'))
         best={k:float('inf') for k in networks};history=[];started=time.monotonic()
-        probability=family_weights(groups['train'])
+        probability=diverse_returns.sampling_weights(groups['train']) if expanded else family_weights(groups['train'])
         for update in range(1,args.updates+1):
             # For smoke ensure both a treated and an untreated example are exercised.
-            indices=np.arange(2) if args.smoke else rng.choice(len(groups['train']),args.batch_size,p=probability)
+            if args.benchmark_longest:
+                longest=max(range(len(groups['train'])),key=lambda i:(groups['train'][i]['protocol'][-1][0],len(groups['train'][i]['sugar_events_s'])))
+                indices=np.full(args.batch_size,longest,dtype=int)
+            else:indices=np.arange(len(groups['train'])) if args.smoke else rng.choice(len(groups['train']),args.batch_size,p=probability)
             rows=[groups['train'][i] for i in indices]
             partitions,_=length_groups(rows,dt)
             for opt in optimizers.values():opt.zero_grad(set_to_none=True)
@@ -189,7 +234,9 @@ def train(args):
                 x,y,mask,gates=prepared_batch(circuit,selected,dt,args.device,response)
                 for name,net in networks.items():
                     prediction,rates=net(x,dt,gates if name=='sugar' else torch.zeros_like(gates))
-                    loss,_=objective(prediction,y,rates,mask,scale,net)
+                    task_weights=None if normalization is None else net.a.new_tensor([
+                        scale**2/normalization['target_energy_mm2'][diverse_returns.stratum(r)] for r in selected])
+                    loss,_=objective(prediction,y,rates,mask,scale,net,trajectory_weights=task_weights)
                     if not torch.isfinite(loss) or not torch.isfinite(rates).all() or rates.max()>1e6:
                         raise ValueError('Training exceeded numerical guard.')
                     weighted=loss*len(positions)/len(rows)
@@ -202,10 +249,10 @@ def train(args):
                 row[name+'_gradient_norm']=float(norm)
             if not args.benchmark and (update%args.validate_every==0 or update==args.updates):
                 for name,net in networks.items():
-                    score=evaluate(net,circuit,groups['validation'],dt,args.device,response,name=='sugar')
+                    score=evaluate(net,circuit,groups['validation'],dt,args.device,response,name=='sugar',normalization=normalization)
                     row[name+'_validation']=score
-                    if score['vector_rmse_mm']<best[name]:
-                        best[name]=score['vector_rmse_mm']
+                    if checkpoint_score(score)<best[name]:
+                        best[name]=checkpoint_score(score)
                         torch.save(dict(model=net.state_dict(),update=update,validation=score),output/(name+'_best.pt'))
             row['elapsed_s']=time.monotonic()-started;history.append(row)
             write_json(output/'history.json',history)
@@ -232,7 +279,7 @@ def train(args):
             result[name]=dict(selected_update=chosen['update'],validation=chosen['validation'])
             if not args.smoke:
                 net.load_state_dict(chosen['model'])
-                result[name]['test']=evaluate(net,circuit,groups['test'],dt,args.device,response,name=='sugar')
+                result[name]['test']=evaluate(net,circuit,groups['test'],dt,args.device,response,name=='sugar',normalization=normalization)
         write_json(output/'comparison.json',result)
         if any(digest(p)!=h for p,h in frozen.items()):raise ValueError('An archived input changed.')
         if any(digest(p)!=h for p,h in code_hashes.items()):raise ValueError('Training implementation changed during execution.')
@@ -251,6 +298,7 @@ def main(argv=None):
     p.add_argument('--backend',choices=('inductor','aot_eager'),default='inductor')
     p.add_argument('--smoke',action='store_true')
     p.add_argument('--benchmark',action='store_true',help='Real training batches; no validation, test evaluation or selected checkpoint.')
+    p.add_argument('--benchmark-longest',action='store_true',help='Benchmark a full batch of longest training paths; requires --benchmark.')
     return train(p.parse_args(argv))
 
 
