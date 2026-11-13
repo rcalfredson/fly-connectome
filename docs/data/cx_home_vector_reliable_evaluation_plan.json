@@ -1,0 +1,74 @@
+{
+  "kind": "home_vector_reliable_evaluation_plan_v1",
+  "specified_on": "2026-11-13",
+  "status": "specified_while_training_in_progress",
+  "training": "results/cx-sugar-reliable-return-training-seed0-20261113",
+  "data": "results/cx-sugar-reliable-return-data-20261113",
+  "data_manifest_sha256": "ee66c5a9c5121728c45826e5d092af8b238fb0ec5ecdde48589b0851eddce41f",
+  "checkpoint_selection": {
+    "source": "each_arm_best.pt",
+    "criterion": "minimum_recorded_validation_selection_score",
+    "verify_history_and_metadata": true,
+    "test_selection_allowed": false,
+    "decoder_refit_allowed": false,
+    "response_parameter_fitting_allowed": false
+  },
+  "conditions": [
+    {"name": "original", "checkpoint": "original_best.pt", "gate": "zero"},
+    {"name": "sugar", "checkpoint": "sugar_best.pt", "gate": "all_saved_reliable_home_contacts"},
+    {"name": "sugar_gate_disabled", "checkpoint": "sugar_best.pt", "gate": "zero"}
+  ],
+  "baselines": ["zero_vector_on_identical_samples"],
+  "sets": {
+    "test": {"trajectories": 512, "role": "principal_held_out_assessment"},
+    "extrapolation": {"trajectories": 48, "role": "sixteen_return_extensions_of_test_families"},
+    "challenge": {"trajectories": 12, "role": "historical_diagnostic"},
+    "diagnostic": {"trajectories": 8, "role": "familiar_not_fresh_generalization"},
+    "diverse_controls": {"trajectories": 4, "role": "near_miss_and_pause_away"}
+  },
+  "principal_metrics_reported_together": [
+    "overall_test_mean_stratum_normalized_mse",
+    "diverse_return_test_vector_rmse_mm"
+  ],
+  "aggregation": "equal_stratum_then_family_then_sibling_uniform_physical_time_excluding_endpoint",
+  "subset_aggregation": "renormalize_fixed_base_weights_among_eligible_trajectories",
+  "normalization": "frozen_training_loss_plan_json_only",
+  "paired_unit": "trajectory_family_not_time_point",
+  "error_delta": "sugar_minus_original_negative_favors_sugar",
+  "subsets": ["stratum", "route_class", "return_count", "traversal", "end_away"],
+  "additional_metrics": [
+    "moving_only_vector_rmse_mm",
+    "endpoint_error_mm",
+    "patch_entry_error_against_actual_target_mm",
+    "annotated_center_return_error_mm",
+    "per_excursion_vector_rmse_mm",
+    "signed_component_errors_mm",
+    "mean_error_vector_and_centered_error_rms_mm",
+    "population_mean_activity",
+    "maximum_single_neuron_activity",
+    "state_norm_at_returns"
+  ],
+  "post_contact_early_window_s": 2.0,
+  "post_contact_overlap_policy": "union_masks_without_double_counting",
+  "representatives": [
+    {"route_class": "regular_loop", "family": "test-diverse-return-0000", "test_id": "test-home-sugar-00418", "extrapolation_id": "extrapolation-home-sugar-00000"},
+    {"route_class": "out_and_back", "family": "test-diverse-return-0005", "test_id": "test-home-sugar-00438", "extrapolation_id": "extrapolation-home-sugar-00010"},
+    {"route_class": "irregular_return", "family": "test-diverse-return-0002", "test_id": "test-home-sugar-00426", "extrapolation_id": "extrapolation-home-sugar-00004"},
+    {"route_class": "mixed_excursions", "family": "test-diverse-return-0007", "test_id": "test-home-sugar-00446", "extrapolation_id": "extrapolation-home-sugar-00014"}
+  ],
+  "representative_selection": "metadata_and_id_only_before_completed_run_output_inspection",
+  "numerical_check": {
+    "examples": "four_preselected_extrapolation_cases",
+    "step_factor": 0.5,
+    "event_times": "unchanged_from_sealed_dataset",
+    "comparison_times": "original_sampling_grid"
+  },
+  "limitations": [
+    "single_training_seed",
+    "familiar_circles_and_early_training_diagnostics_already_inspected",
+    "test_and_extrapolation_share_parent_families",
+    "open_ending_short_cases_are_not_always_exact_long_case_prefixes",
+    "gate_disabled_condition_is_an_out_of_training_intervention",
+    "historical_model_comparisons_can_differ_in_objective_and_delivery_schedule"
+  ]
+}
