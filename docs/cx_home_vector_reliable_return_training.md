@@ -1,8 +1,9 @@
 # Recurrent training with reliable sugar at home
 
-Status on 13 November 2026: the seed-0 paired scientific run is in progress at
-`results/cx-sugar-reliable-return-training-seed0-20261113`. The dataset and
-engineering checks below are complete; completed-run evaluation remains pending.
+Status on 15 November 2026: the seed-0 paired scientific run completed 2,000
+updates at `results/cx-sugar-reliable-return-training-seed0-20261113`. Both arms
+selected update 2,000 by normalized validation MSE. The frozen evaluation is
+complete; see [results and interpretation](cx_home_vector_reliable_evaluation_results.md).
 
 ## Log entry
 
