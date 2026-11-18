@@ -153,7 +153,7 @@ that these cells have no other functions.
 | hDeltaB | Allocentric translation/travel direction and a vector coordinate transformation. [Lu et al.](https://www.nature.com/articles/s41586-021-04191-x), [Lyu et al.](https://www.nature.com/articles/s41586-021-04067-0) | The trained recurrent population still signals world travel direction. Its population angle also depends on earlier movement. See slide 10. |
 | vDeltaE | Imaging and perturbation evidence for involvement in hDeltaG integration. The thesis reports rapid post-sugar rebound in hDeltaG under silencing. [Janke thesis](https://digitalcommons.rockefeller.edu/student_theses_and_dissertations/808/) | Silencing modeled vDeltaE raises pre-sugar hDeltaG activity. Post-sugar activity remains suppressed in the tested replay. See slide 11. |
 | hDeltaG | Sugar-associated suppression; slow mean-activity recovery and a faster bump-amplitude signal associated with recent walked distance, interpreted using a leaky-integration model. [Janke thesis](https://digitalcommons.rockefeller.edu/student_theses_and_dissertations/808/) | Our gate reproduces a qualitative suppression idea. Model memory attenuation is qualitatively compatible with leaky integration, but neither its timescale nor population bump phase/amplitude has been matched to those measurements. |
-| hDeltaC | Odor-gated wind-direction tuning and perturbation evidence for upwind olfactory navigation. [Matheson et al.](https://www.nature.com/articles/s41467-022-32247-7) | Added for its anatomical connections and computational capacity. No odor or wind input/behavior is modeled, so its participation here does not establish reproduction of that measured job. |
+| hDeltaC | Odor-gated wind-direction tuning and perturbation evidence for upwind olfactory navigation. [Matheson et al.](https://www.nature.com/articles/s41467-022-32247-7) | Brief silencing weakens early displacement retention in the tested replays, partly through changes in other populations. See slide 12. The measured odor and wind response remains outside this task. |
 
 The Lu/Lyu movement-coordinate evidence does not itself demonstrate a persistent
 home-vector memory in hDeltaB. Janke's source is a thesis, not a peer-reviewed
@@ -255,7 +255,8 @@ class is necessary for its memory.
 | 9 | Which biological claims are supported? | Cell-type evidence matrix and current sign/parameter audit |
 | 10 | Does hDeltaB still signal world travel direction? | [Direction and history probes](../results/cx-home-vector-hdeltab-direction-20261118-v2/hdeltab_direction_slide.png) with the same fixed population-angle readout |
 | 11 | Does silencing vDeltaE accelerate hDeltaG recovery after sugar? | [hDeltaG recovery and matched controls](../results/cx-home-vector-vdeltae-silencing-20261118-v3/vdeltae_hdeltag_recovery.png) |
-| 12 | What has been established, and what would discriminate the remaining explanations? | Conclusions and targeted next measurements below |
+| 12 | How does hDeltaC support retained displacement? | [Forward-history circle probe](../results/cx-home-vector-hdeltac-slide12-20261118/cx_home_vector_hdeltac_forward_circles_slide12.png) and the breakdown at clamp release |
+| 13 | What has been established, and what would discriminate the remaining explanations? | Conclusions and targeted next measurements below |
 
 Slide 7's focused figure uses rest versus the forward-4mm prefix under path 15
 (clockwise circles, rightward traversal). It shows decoded vector separation
@@ -393,7 +394,29 @@ insufficient to demonstrate faster recovery. The gate stays active across
 the replay, and its contribution to the mismatch remains open. See the
 [methods and results](cx_home_vector_vdeltae_silencing.md).
 
-## Slide 12 closing statement
+## Slide 12 working draft
+
+**hDeltaC supports early displacement retention through the recurrent circuit**
+
+Compare a stationary history with a 4-mm forward history in the frozen standard
+network. Both are followed by identical circular movement. Replay with hDeltaC
+intact or silenced for the first two seconds of the shared input.
+
+Show the [standalone forward-history circle panel](../results/cx-home-vector-hdeltac-slide12-20261118/cx_home_vector_hdeltac_forward_circles_slide12.png).
+Read the y-axis as the part of the two histories' decoded difference that
+points along the correct 4-mm offset. The orange line is hDeltaC's own decoder
+term in the intact replay. At the two-second silencing boundary, the decoded
+separation along the offset falls from 2.52 to 1.84 mm. Removing hDeltaC's own
+term accounts for 0.05 mm of the drop. Changes in the contributions of the other
+cells account for 0.63 mm.
+
+Use the [four-panel figure](../results/cx-home-vector-hdeltac-retention-20261118-v2/hdeltac_retention.png)
+in backup. Early separation weakens in all four comparisons at two seconds.
+Later effects depend on the prior history and the shared input. The
+[methods and results](cx_home_vector_hdeltac_retention.md) describe the full
+vector errors and the limits of the intervention.
+
+## Slide 13 closing statement
 
 > Anatomically constrained learning produced a useful but imperfect movement-
 > history representation. Repeated-return training removed severe accumulation,
@@ -414,9 +437,11 @@ the replay, and its contribution to the mismatch remains open. See the
    post-sugar rise reported in the fly experiment. Slide 11 shows this
    comparison. A quantitative comparison requires an explicit link between
    model rates and the recorded observable.
-3. Quantify hDeltaC's direct contribution to decoded separation in the
-   different-history trials. Then perturb hDeltaC in a matched replay to
-   test how the other populations and decoded separation respond.
+3. The [hDeltaC retention probe](cx_home_vector_hdeltac_retention.md) found
+   a small direct readout contribution along the correct offset and a
+   larger circuit effect in the forward-circle example. Brief silencing
+   weakened the target-aligned separation early in all four comparisons.
+   Later effects depended on the history and continuation.
 4. For performance explanations, matched optimization continuation and another
    seed before concluding an architectural limit. Revised tasks require fresh
    confirmatory holdouts. Do not tune physiology parameters to make sugar win.
