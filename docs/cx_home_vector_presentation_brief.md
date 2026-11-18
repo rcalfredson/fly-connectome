@@ -253,7 +253,8 @@ class is necessary for its memory.
 | 7 | Does meaningful history survive? | [Focused two-panel retention figure](../results/cx-home-vector-slide07-retention-20261117-v2/cx_home_vector_standard_retention_cw_rightward_16loops_slide07.png); required offsets versus merging states |
 | 8 | Is forgetting universal? | [Pause control](../results/cx-standard-displacement-retention-20261117/pause_32s_retention.png); history survives imperfectly and differently by direction |
 | 9 | Which biological claims are supported? | Cell-type evidence matrix and current sign/parameter audit |
-| 10 | What has been established, and what would discriminate the remaining explanations? | Conclusions and targeted next measurements below |
+| 10 | Does hDeltaB still signal world travel direction? | [Direction and history probes](../results/cx-home-vector-hdeltab-direction-20261118-v2/hdeltab_direction_slide.png) with the same fixed population-angle readout |
+| 11 | What has been established, and what would discriminate the remaining explanations? | Conclusions and targeted next measurements below |
 
 Slide 7's focused figure uses rest versus the forward-4mm prefix under path 15
 (clockwise circles, rightward traversal). It shows decoded vector separation
@@ -328,7 +329,45 @@ MPLCONFIGDIR=/tmp/fly-connectome-mpl OPENBLAS_NUM_THREADS=1 \
 --output results/cx-home-vector-slide08-pause-reproduction
 ```
 
-Suggested closing statement:
+## Slide 10 working draft
+
+**hDeltaB signals travel direction and reflects earlier movement**
+
+Put the two-panel figure across the middle of the slide. Add a short question
+above each panel and one sentence below the figure. The title carries the
+takeaway, so the bottom sentence can explain the comparison rather than repeat it.
+
+| Panel | Heading above the plot | Setup line below it |
+| --- | --- | --- |
+| Left | How well does hDeltaB track world travel direction? | 64 combinations of heading and travel direction at 1 mm/s. |
+| Right | Does earlier movement change the hDeltaB angle? | The same movement probes follow four seconds of different histories. |
+
+**Caption beneath both panels** — Both panels use the same fixed readout of
+the hDeltaB population angle.
+
+**Speaker notes.** On the left, the same fixed angle readout estimates travel
+direction from hDeltaB population activity in both models. Mean absolute error
+is 15.8° in the earlier feedforward model and 28.6° in the recurrent model during
+the matching 0.8–1.0 s window. In the recurrent model it falls to 21.9° at
+2.8–3.0 s. The models differ in direct PFN weights, time constants and recurrent
+connections, so the comparison does not isolate the effect of any one change.
+
+On the right, every movement direction is tested after a four-second stationary
+history and after each of the three movement histories. Zero shift is the
+expectation for a signal that depends only on current travel direction.
+The bars show the median absolute difference from the stationary-history
+reference across eight directions. Following the 4-mm forward and rightward
+histories, the early shifts are about 82° and the late shifts are about 10°
+and 32°, respectively. The closed square ends at its starting position and
+produces smaller shifts. These probes establish sensitivity to earlier movement
+and leave open what aspect of that history hDeltaB represents.
+
+Keep the six-panel diagnostic in backup for questions about individual trials,
+angle wrapping or activity-pattern similarity. The
+[hDeltaB methods and results](cx_home_vector_hdeltab_direction.md) give the
+controls and interpretation.
+
+## Slide 11 closing statement
 
 > Anatomically constrained learning produced a useful but imperfect movement-
 > history representation. Repeated-return training removed severe accumulation,
@@ -344,13 +383,13 @@ Suggested closing statement:
    Neuron-index heatmaps and decoder projections are not evidence of the
    anatomical population bump by themselves. Do not choose a different phase
    alignment for each trajectory to improve agreement.
-2. Latest-checkpoint hDeltaB current-velocity tuning versus history dependence,
-   and vDeltaE/hDeltaG population observables under matching protocols. Translate
-   model rates to the measured observable only with an explicit observation
-   model; calcium fluorescence is not an arbitrary-unit firing rate.
-3. Population-specific causal interventions on the frozen solution to identify
-   which feedback supports retained history. Acute interventions identify
-   dependence of that solution, not impossibility after retraining.
+2. Test how vDeltaE perturbations change the hDeltaG recovery time course in
+   the frozen sugar-response model under matched movement and sugar delivery.
+   A quantitative comparison requires an explicit link between model rates
+   and the recorded observable.
+3. Quantify hDeltaC's direct contribution to decoded separation in the
+   different-history trials. Then perturb hDeltaC in a matched replay to
+   test how the other populations and decoded separation respond.
 4. For performance explanations, matched optimization continuation and another
    seed before concluding an architectural limit. Revised tasks require fresh
    confirmatory holdouts. Do not tune physiology parameters to make sugar win.
