@@ -150,8 +150,8 @@ that these cells have no other functions.
 | Cell type | Primary physiological evidence | What our model does / what remains untested |
 | --- | --- | --- |
 | PFNd/PFNv | Joint tuning to heading and body-centered translation during walking; PFNd perturbation affects path integration. [Lu et al.](https://www.nature.com/articles/s41586-021-04191-x) | We prescribe a simplified version of that encoding. It is an input assumption, not a learned discovery. Exact ambiguities in the prescription are not a demonstration that real PFNs share them. |
-| hDeltaB | Allocentric translation/travel direction and a vector coordinate transformation. [Lu et al.](https://www.nature.com/articles/s41586-021-04191-x), [Lyu et al.](https://www.nature.com/articles/s41586-021-04067-0) | The initial feedforward foundation addresses this computation. The latest recurrent hDeltaB activity must be reassessed separately; accurate whole-network home decoding does not show that hDeltaB retains its measured velocity role. |
-| vDeltaE | Imaging and perturbation evidence for involvement in hDeltaG integration; effects enter the thesis's ramp/leak model. [Janke thesis](https://digitalcommons.rockefeller.edu/student_theses_and_dissertations/808/) | We train effective recurrent interactions. We have not reproduced the vDeltaE perturbations or quantitatively matched its interaction with hDeltaG. |
+| hDeltaB | Allocentric translation/travel direction and a vector coordinate transformation. [Lu et al.](https://www.nature.com/articles/s41586-021-04191-x), [Lyu et al.](https://www.nature.com/articles/s41586-021-04067-0) | The trained recurrent population still signals world travel direction. Its population angle also depends on earlier movement. See slide 10. |
+| vDeltaE | Imaging and perturbation evidence for involvement in hDeltaG integration. The thesis reports rapid post-sugar rebound in hDeltaG under silencing. [Janke thesis](https://digitalcommons.rockefeller.edu/student_theses_and_dissertations/808/) | Silencing modeled vDeltaE raises pre-sugar hDeltaG activity. Post-sugar activity remains suppressed in the tested replay. See slide 11. |
 | hDeltaG | Sugar-associated suppression; slow mean-activity recovery and a faster bump-amplitude signal associated with recent walked distance, interpreted using a leaky-integration model. [Janke thesis](https://digitalcommons.rockefeller.edu/student_theses_and_dissertations/808/) | Our gate reproduces a qualitative suppression idea. Model memory attenuation is qualitatively compatible with leaky integration, but neither its timescale nor population bump phase/amplitude has been matched to those measurements. |
 | hDeltaC | Odor-gated wind-direction tuning and perturbation evidence for upwind olfactory navigation. [Matheson et al.](https://www.nature.com/articles/s41467-022-32247-7) | Added for its anatomical connections and computational capacity. No odor or wind input/behavior is modeled, so its participation here does not establish reproduction of that measured job. |
 
@@ -254,7 +254,8 @@ class is necessary for its memory.
 | 8 | Is forgetting universal? | [Pause control](../results/cx-standard-displacement-retention-20261117/pause_32s_retention.png); history survives imperfectly and differently by direction |
 | 9 | Which biological claims are supported? | Cell-type evidence matrix and current sign/parameter audit |
 | 10 | Does hDeltaB still signal world travel direction? | [Direction and history probes](../results/cx-home-vector-hdeltab-direction-20261118-v2/hdeltab_direction_slide.png) with the same fixed population-angle readout |
-| 11 | What has been established, and what would discriminate the remaining explanations? | Conclusions and targeted next measurements below |
+| 11 | Does silencing vDeltaE accelerate hDeltaG recovery after sugar? | [hDeltaG recovery and matched controls](../results/cx-home-vector-vdeltae-silencing-20261118-v3/vdeltae_hdeltag_recovery.png) |
+| 12 | What has been established, and what would discriminate the remaining explanations? | Conclusions and targeted next measurements below |
 
 Slide 7's focused figure uses rest versus the forward-4mm prefix under path 15
 (clockwise circles, rightward traversal). It shows decoded vector separation
@@ -367,7 +368,32 @@ angle wrapping or activity-pattern similarity. The
 [hDeltaB methods and results](cx_home_vector_hdeltab_direction.md) give the
 controls and interpretation.
 
-## Slide 11 closing statement
+## Slide 11 working draft
+
+**Silencing vDeltaE raises hDeltaG activity, but recovery stays slow**
+
+Replay the same circular movement in the frozen sugar-trained model with
+vDeltaE intact or silenced throughout. Deliver one sugar stimulus after the
+first loop and include a matched no-sugar run for each condition.
+
+Show the first two panels of the [recovery figure](../results/cx-home-vector-vdeltae-silencing-20261118-v3/vdeltae_hdeltag_recovery.png).
+The first shows mean hDeltaG activity around sugar onset. Dashed lines indicate
+the no-sugar controls. The second shows mean activity in the two sugar runs
+over each subsequent eight-second circle.
+
+- Mean hDeltaG activity in the last second before sugar was 1.87 model units
+  with vDeltaE intact and 4.54 with vDeltaE silenced.
+- After sugar, both runs stayed suppressed relative to their respective
+  no-sugar controls.
+- The rapid post-sugar rebound reported in the fly experiment did not occur
+  in this replay. [Janke thesis, Fig. 3.7d](https://digitalcommons.rockefeller.edu/student_theses_and_dissertations/808/).
+
+The pre-sugar difference explains why higher activity after sugar alone is
+insufficient to demonstrate faster recovery. The gate stays active across
+the replay, and its contribution to the mismatch remains open. See the
+[methods and results](cx_home_vector_vdeltae_silencing.md).
+
+## Slide 12 closing statement
 
 > Anatomically constrained learning produced a useful but imperfect movement-
 > history representation. Repeated-return training removed severe accumulation,
@@ -383,10 +409,11 @@ controls and interpretation.
    Neuron-index heatmaps and decoder projections are not evidence of the
    anatomical population bump by themselves. Do not choose a different phase
    alignment for each trajectory to improve agreement.
-2. Test how vDeltaE perturbations change the hDeltaG recovery time course in
-   the frozen sugar-response model under matched movement and sugar delivery.
-   A quantitative comparison requires an explicit link between model rates
-   and the recorded observable.
+2. The first [vDeltaE silencing probe](cx_home_vector_vdeltae_silencing.md)
+   raised hDeltaG activity before sugar but did not reproduce the rapid
+   post-sugar rise reported in the fly experiment. Slide 11 shows this
+   comparison. A quantitative comparison requires an explicit link between
+   model rates and the recorded observable.
 3. Quantify hDeltaC's direct contribution to decoded separation in the
    different-history trials. Then perturb hDeltaC in a matched replay to
    test how the other populations and decoded separation respond.
