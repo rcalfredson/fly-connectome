@@ -1,7 +1,13 @@
 # Presentation brief: learned home-vector tracking in a partial fly CX circuit
 
-Working evidence inventory, 17 November 2026. This is a presentation outline and
-claim assessment, not a completed slide deck or physiological validation.
+Presentation outline and evidence inventory.
+
+The talk was split into two parts. Part I introduces the home vector, central
+complex anatomy, the modeled circuit, and three tests that motivate the
+results talk. The [Part I speaker guide](cx_home_vector_part1_speaker_guide.md)
+follows its seven-page slide order, including the title card. Part II will
+recap the setup and present the results. The slide numbers below refer to the
+combined working draft and serve as an index to its results and figures.
 
 ## Suggested central question and answer
 
@@ -19,6 +25,31 @@ cell-type computations and effective synaptic dynamics remain hypotheses.
 A fading memory can be computationally inadequate for exact home retention
 while qualitatively resembling a biologically useful leaky integrator. These
 are different assessments.
+
+## Slide 1 working draft
+
+**Title** — What does it mean to keep track of home?
+
+**Layout** — Place the route diagram on the right and two short text blocks
+on the left. The dashed route shows the walk from home to the current
+position. The solid arrow points from the current position back to the fixed
+home location.
+
+> The home vector gives the direction and straight-line distance from the
+> fly’s current position to its starting point.
+>
+> Can a network constrained by fly central-complex anatomy learn to track
+> this vector from movement signals?
+
+**Spoken transition** — “As the fly moves, the arrow changes. To keep it
+up to date from movement alone, the network has to keep track of the
+displacement it has accumulated. We’ll ask whether this circuit can learn
+that task, and how closely its activity resembles what the real cell types
+do. First, here’s what the model receives and what it learns.”
+
+Figure exports in [PNG](../results/cx-home-vector-slide01-20261118/cx_home_vector_definition_slide01.png),
+[editable SVG](../results/cx-home-vector-slide01-20261118/cx_home_vector_definition_slide01.svg),
+and [vector PDF](../results/cx-home-vector-slide01-20261118/cx_home_vector_definition_slide01.pdf).
 
 ## The current setup: one slide
 
@@ -79,7 +110,70 @@ conditions changed across milestones. Earlier 45-cell metrics, local 4-second
 errors, decoder-only refits and current 65-cell test RMSEs are not interchangeable.
 See the individual reports before placing any old number on a slide.
 
-## Computational results: two slides
+## Slide 4 working draft
+
+**Title** — The early standard model tracks a short circle
+
+**Layout** — Put the route diagram on the left, with a direction-of-travel
+arrow and a shared start/return marker. On the right, stack home-vector
+`x` and `y` traces on the same 0–8 s time axis, with a solid prediction and
+dashed target. Use one legend and mark the return at 8 s on both plots.
+The example is path 8, a counterclockwise circle traversed while walking
+forward. Draw the route relative to its start from the negative of the
+archived target, which points back to the start.
+
+**Slide assets** — [Route PNG](../results/cx-home-vector-slide04-20261118/cx_home_vector_early_standard_path08_route.png)
+and [component traces PNG](../results/cx-home-vector-slide04-20261118/cx_home_vector_early_standard_path08_first_loop_components.png).
+Both are also available as SVG and PDF in the same directory. The route
+uses the repository's positive-down y convention. The component plots
+show the archived values with a common vertical scale.
+
+**Training recap** — Fit the recurrent circuit and readout together to
+predict the home vector along trajectories. Validation selected update 1975.
+The later experiments keep the supervised prediction task while changing
+the training examples and loss weighting.
+
+**Figure callout** — 0.149 mm vector RMSE over the circle.
+
+**Held-out context** — On the original test subset, vector RMSE was
+0.220 mm. On the added long-path test subset, it was 4.396 mm. Keep those
+subset scores together and apart from the example-circle callout.
+
+**Spoken transition** — “The readout follows both components over one
+circle, although it still misses home by about a quarter of a millimeter
+at the return. What happens if we keep the model running and give it the
+same movement a second time?”
+
+Data and metrics come from the
+[early standard-model assessment](cx_home_vector_balanced_u2000_assessment.md)
+and the [archived path 8 replay](../results/cx-home-vector-balanced-u1975-repeated-loops-20261112/path_08.npz).
+The first-loop RMSE covers samples before the return. The component plots
+should include the return sample at 8 s, where the vector error is 0.245 mm.
+
+## Slide 5 working draft
+
+**Title** — Repeating the same circle exposes drift and activity buildup
+
+Continue path 8 through a second identical 8 s loop, carrying the neural
+state across the first return. Show decoded vector error above hDeltaG
+mean activity and all eight individual hDeltaG traces, on a common time
+axis with markers at 8 and 16 s. On path 8, vector RMSE rose from
+0.149 to 1.044 mm and return error rose from 0.245 to 1.544 mm. Across the
+four circles, both errors and the endpoint full-state activity norm rose
+on loop 2. The co-occurrence motivates a perturbation without isolating
+which activity changes contribute to the error.
+
+**Slide asset** — [Path 8 error and hDeltaG activity](../results/cx-home-vector-slide05-20261118/cx_home_vector_early_standard_path08_two_loop_drift_activity.png).
+SVG and PDF exports are in the same directory. The hDeltaG population
+mean at the two returns was 10.54 and 21.14 model units.
+
+Use the [repeated-loop report](cx_home_vector_repeated_loops.md) and
+[archived figure](../results/cx-home-vector-balanced-u1975-repeated-loops-20261112/paths_08_09.png).
+Bridge to the sugar comparison by asking whether sugar-triggered hDeltaG
+suppression could limit drift and whether a standard circuit could learn
+to do so with different training examples.
+
+## Slides 6–7: the sugar rule and trained comparison
 
 Current seed-0 reliable-return training: 2,000 paired updates; both selected
 update 2,000 by normalized validation MSE. The objective scales trajectory errors
@@ -108,6 +202,14 @@ normalized score according to which model wins.
 
 ## The latest mechanistic finding: two slides
 
+**Repeatability slide assets** — [Successive-lap full-state differences](../results/cx-home-vector-loop-repeatability-slides-20261118/cx_home_vector_standard_path09_successive_lap_state_difference.png)
+and [individual hDeltaG activity at laps 1, 8 and 16](../results/cx-home-vector-loop-repeatability-slides-20261118/cx_home_vector_standard_path09_hdeltag_lap_activity.png).
+Both use path 9 (counterclockwise, rightward traversal) in the retrained
+standard network. The line plot compares all 65 neurons at matching times
+within each pair of successive laps. The heatmaps share an activity scale
+and a fixed row order for the eight hDeltaG neurons. SVG and PDF exports are
+in the same directory.
+
 The standard network's phase-matched full-state differences decrease by
 approximately 1,300–33,000-fold from loops 2-versus-1 to 16-versus-15. This is
 repeatability of actual neurons, not only cancellation in the decoder. It is a
@@ -116,6 +218,13 @@ finite periodically driven replay, not a stability theorem.
 The remaining loop-16 squared error is 90.8–99.3% mean vector offset. Timing,
 amplitude and waveform errors remain, but are smaller. A post-hoc descriptive
 Fourier decomposition does not correct the predictions or train a new decoder.
+
+**Persistent-error slide assets** — [Path 9 home-vector x on laps 15 and 16](../results/cx-home-vector-persistent-error-slides-20261118/cx_home_vector_standard_path09_late_lap_home_x.png)
+and [mean-offset share of lap 16 squared error](../results/cx-home-vector-persistent-error-slides-20261118/cx_home_vector_standard_lap16_mean_offset_share.png).
+The left panel shows one component from the same frozen replay as the
+repeatability slide. The offset shares use both components of the vector.
+The mean offset is the prediction minus the correct vector, averaged over
+the lap. SVG and PDF exports are in the same directory.
 
 The stronger retention probe starts from six equal-duration physically reached
 states and supplies identical continuations. For rest versus a 4-mm forward
@@ -150,10 +259,10 @@ that these cells have no other functions.
 | Cell type | Primary physiological evidence | What our model does / what remains untested |
 | --- | --- | --- |
 | PFNd/PFNv | Joint tuning to heading and body-centered translation during walking; PFNd perturbation affects path integration. [Lu et al.](https://www.nature.com/articles/s41586-021-04191-x) | We prescribe a simplified version of that encoding. It is an input assumption, not a learned discovery. Exact ambiguities in the prescription are not a demonstration that real PFNs share them. |
-| hDeltaB | Allocentric translation/travel direction and a vector coordinate transformation. [Lu et al.](https://www.nature.com/articles/s41586-021-04191-x), [Lyu et al.](https://www.nature.com/articles/s41586-021-04067-0) | The trained recurrent population still signals world travel direction. Its population angle also depends on earlier movement. See slide 10. |
-| vDeltaE | Imaging and perturbation evidence for involvement in hDeltaG integration. The thesis reports rapid post-sugar rebound in hDeltaG under silencing. [Janke thesis](https://digitalcommons.rockefeller.edu/student_theses_and_dissertations/808/) | Silencing modeled vDeltaE raises pre-sugar hDeltaG activity. Post-sugar activity remains suppressed in the tested replay. See slide 11. |
+| hDeltaB | Allocentric translation/travel direction and a vector coordinate transformation. [Lu et al.](https://www.nature.com/articles/s41586-021-04191-x), [Lyu et al.](https://www.nature.com/articles/s41586-021-04067-0) | The trained recurrent population still signals world travel direction. Its population angle also depends on earlier movement. See slide 13. |
+| vDeltaE | Imaging and perturbation evidence for involvement in hDeltaG integration. The thesis reports rapid post-sugar rebound in hDeltaG under silencing. [Janke thesis](https://digitalcommons.rockefeller.edu/student_theses_and_dissertations/808/) | Silencing modeled vDeltaE raises pre-sugar hDeltaG activity. Post-sugar activity remains suppressed in the tested replay. See slide 14. |
 | hDeltaG | Sugar-associated suppression; slow mean-activity recovery and a faster bump-amplitude signal associated with recent walked distance, interpreted using a leaky-integration model. [Janke thesis](https://digitalcommons.rockefeller.edu/student_theses_and_dissertations/808/) | Our gate reproduces a qualitative suppression idea. Model memory attenuation is qualitatively compatible with leaky integration, but neither its timescale nor population bump phase/amplitude has been matched to those measurements. |
-| hDeltaC | Odor-gated wind-direction tuning and perturbation evidence for upwind olfactory navigation. [Matheson et al.](https://www.nature.com/articles/s41467-022-32247-7) | Brief silencing weakens early displacement retention in the tested replays, partly through changes in other populations. See slide 12. The measured odor and wind response remains outside this task. |
+| hDeltaC | Odor-gated wind-direction tuning and perturbation evidence for upwind olfactory navigation. [Matheson et al.](https://www.nature.com/articles/s41467-022-32247-7) | Brief silencing weakens early displacement retention in the tested replays, partly through changes in other populations. See slide 15. The measured odor and wind response remains outside this task. |
 
 The Lu/Lyu movement-coordinate evidence does not itself demonstrate a persistent
 home-vector memory in hDeltaB. Janke's source is a thesis, not a peer-reviewed
@@ -167,54 +276,37 @@ for adding a generic extra input: [Ishida et al., Cell 2026](https://doi.org/10.
 describe calcium-spike-mediated vector inversion in a different PFN class. That
 is outside the current PFNd/PFNv-only boundary and is not a property we modeled.
 
-## Slide 9 working draft: biological correspondence
+## Slide 12 working draft
 
-**Title:** Biological grounding is not yet physiological validation.
+**Title** — How closely does the model resemble the fly circuit?
 
-Use a full-width three-column matrix as the main visual: cell type, measured
-physiological evidence, and status in the model. Minimal PNG/SVG/PDF exports
-are in `results/cx-home-vector-slide09-biology-20261117`; the source text is also
-in `table_content.csv` for rebuilding an ordinary editable slide table. Title,
-takeaway and reference footer are intentionally outside the graphic.
+Open with one line beneath the title. Anatomy constrains the connections,
+PFN tuning is prescribed, and the recurrent circuit is trained to predict
+the home vector.
 
-The five rows separately cover prescribed PFNd/PFNv and each dynamic class.
-Keep vDeltaE and hDeltaG separate: a perturbation relationship between them is
-not the same evidence as hDeltaG suppression or a published integration model.
-The hDeltaG sugar approximation applies only to the sugar-response variant.
-The hDeltaB coordinate-transform foundation refers to the initial feedforward
-work; the latest recurrent tuning is not thereby validated.
+Use an editable table to lead into the three population-specific slides.
 
-**Takeaway:** Useful home-vector decoding does not yet show that each cell type
-performs its measured biological role.
+| Population | Evidence from the fly | Question for the model |
+| --- | --- | --- |
+| hDeltaB | Signals travel direction in world coordinates | Does this direction signal survive recurrent training? |
+| vDeltaE | Silencing changes hDeltaG recovery after sugar | Does the sugar-response model reproduce that shift in recovery? |
+| hDeltaC | Responds to wind direction in an odor-guided task | How does it contribute to retaining prior displacement in our circuit? |
 
-Speaker notes should make the evidence levels explicit: anatomy constrains the
-selected edge mask; simplified PFN tuning is prescribed; the recurrent model
-is trained on geometric home-vector targets rather than cell-type physiological
-responses. Current learning permits effective couplings and activity patterns
-that have not been matched to transmitter/receptor, compartmental or calcium
-measurements. This is a limitation on the biological claim, not evidence that
-the model has no scientific value or that the measured fly circuit cannot
-support navigation.
+The first two probes ask how the model compares with physiological evidence.
+The hDeltaC probe asks what role this population acquired in the home-vector
+task. The model receives no odor or wind input. The PFN prescription and
+hDeltaG suppression rule are already covered on slides 2 and 6.
 
-The recent memory attenuation is compatible with some forms of leaky processing,
-but does not demonstrate Janke's specific mechanism or fitted timescales. Do not
-add raw model/calcium overlays to this slide without a matched protocol and an
-explicit observation model. hDeltaC's odor/wind evidence is a task-context
-qualification, not proof that it has no other function.
+Reference footer — Lu et al. (2022) and Lyu et al. (2022) for hDeltaB, Janke's thesis for
+vDeltaE, and Matheson et al. (2022) for hDeltaC. See the evidence table above
+for source links and the current assessment by population. The earlier
+five-row matrix exports in `results/cx-home-vector-slide09-biology-20261117`
+predate the three probes.
 
-Reference footer: [1] Lu et al., 2022; [2] Lyu et al., 2022; [3] Janke, thesis
-(repository 2025; supplied PDF September 2024); [4] Matheson et al., 2022.
-Full primary-source URLs are in the evidence table above and exported
-`sources.json`. The glyphs in the matrix are literal type names, not anatomical
-population diagrams or pass/fail symbols. No new physiological fitting is
-performed for this presentation asset.
-
-```bash
-MPLCONFIGDIR=/tmp/fly-connectome-mpl OPENBLAS_NUM_THREADS=1 \
-/home/tracking/miniconda3/envs/py3.13-torch/bin/python \
--m fly_connectome.home_vector.analysis.slide_biology \
---output results/cx-home-vector-slide09-biology-reproduction
-```
+Spoken transition — “The circuit learned activity that can be read out as
+a home vector. We can now ask which aspects of that activity resemble what
+we see in flies. First, does hDeltaB still tell us which way the fly is
+traveling?”
 
 ## Current parameter flexibility: an essential qualification
 
@@ -240,25 +332,28 @@ established a special functional advantage of the biological topology here.
 No latest-checkpoint population-specific intervention establishes which cell
 class is necessary for its memory.
 
-## Proposed slide sequence and figure selection
+## Combined draft slide sequence and figure selection
 
 | Slide | Question / message | Evidence or visual |
 | --- | --- | --- |
-| 1 | Can a partial fly circuit track home, and does it do so biologically? | Distinguish capacity, mechanism and physiology |
+| 1 | What does it mean to keep track of home? | Define the home vector with a route schematic and introduce the guiding question |
 | 2 | What enters the model and what learns? | Current setup table/pipeline; anatomy versus learned coefficients |
-| 3 | How did the investigation evolve? | Six milestones above; avoid mixing task metrics |
-| 4 | Does sugar improve tracking? | Current metric table; circles 8 and 14 as balanced examples |
-| 5 | What became stable? | [Phase-aligned activity](../results/cx-standard-loop-phases-20261116/path_09_phase_comparison.png) and [all-neuron heatmaps](../results/cx-standard-loop-phases-20261116/path_09_phase_activity.png) |
-| 6 | What is still wrong? | [Final-loop error budget](../results/cx-standard-displacement-retention-20261117/circle_error_budget.png); offsets dominate |
-| 7 | Does meaningful history survive? | [Focused two-panel retention figure](../results/cx-home-vector-slide07-retention-20261117-v2/cx_home_vector_standard_retention_cw_rightward_16loops_slide07.png); required offsets versus merging states |
-| 8 | Is forgetting universal? | [Pause control](../results/cx-standard-displacement-retention-20261117/pause_32s_retention.png); history survives imperfectly and differently by direction |
-| 9 | Which biological claims are supported? | Cell-type evidence matrix and current sign/parameter audit |
-| 10 | Does hDeltaB still signal world travel direction? | [Direction and history probes](../results/cx-home-vector-hdeltab-direction-20261118-v2/hdeltab_direction_slide.png) with the same fixed population-angle readout |
-| 11 | Does silencing vDeltaE accelerate hDeltaG recovery after sugar? | [hDeltaG recovery and matched controls](../results/cx-home-vector-vdeltae-silencing-20261118-v3/vdeltae_hdeltag_recovery.png) |
-| 12 | How does hDeltaC support retained displacement? | [Forward-history circle probe](../results/cx-home-vector-hdeltac-slide12-20261118/cx_home_vector_hdeltac_forward_circles_slide12.png) and the breakdown at clamp release |
-| 13 | What has been established, and what would discriminate the remaining explanations? | Conclusions and targeted next measurements below |
+| 3 | Three tests of the learned home vector | Preview early performance, ways to limit drift, and displacement memory |
+| 4 | How well did the early standard model track home? | Path 8 first-loop component traces, training recap and held-out RMSE |
+| 5 | What happens when the early standard model repeats the same circle? | Path 8 two-loop error and activity traces, with results across all four circles |
+| 6 | What does a sugar event do in the model? | Matched path 8 hDeltaG replay, one scheduled sugar delivery versus control |
+| 7 | Does sugar improve tracking after retraining? | Whole-route RMSE for familiar circles and held-out diverse returns |
+| 8 | What became stable? | [Phase-aligned activity](../results/cx-standard-loop-phases-20261116/path_09_phase_comparison.png) and [all-neuron heatmaps](../results/cx-standard-loop-phases-20261116/path_09_phase_activity.png) |
+| 9 | What is still wrong? | [Final-loop error budget](../results/cx-standard-displacement-retention-20261117/circle_error_budget.png); offsets dominate |
+| 10 | Does meaningful history survive? | [Focused two-panel retention figure](../results/cx-home-vector-slide07-retention-20261117-v2/cx_home_vector_standard_retention_cw_rightward_16loops_slide07.png); required offsets versus merging states |
+| 11 | Is forgetting universal? | [Pause control](../results/cx-standard-displacement-retention-20261117/pause_32s_retention.png); history survives imperfectly and differently by direction |
+| 12 | How closely does the model resemble the fly circuit? | Three cell-population questions grounded in the experimental evidence |
+| 13 | Does hDeltaB still signal world travel direction? | [Direction and history probes](../results/cx-home-vector-hdeltab-direction-20261118-v2/hdeltab_direction_slide.png) with the same fixed population-angle readout |
+| 14 | Does silencing vDeltaE accelerate hDeltaG recovery after sugar? | [hDeltaG recovery and matched controls](../results/cx-home-vector-vdeltae-silencing-20261118-v3/vdeltae_hdeltag_recovery.png) |
+| 15 | How does hDeltaC support retained displacement? | [Forward-history circle probe](../results/cx-home-vector-hdeltac-slide12-20261118/cx_home_vector_hdeltac_forward_circles_slide12.png) and the breakdown at clamp release |
+| 16 | What has been established, and what would discriminate the remaining explanations? | Conclusions and targeted next measurements below |
 
-Slide 7's focused figure uses rest versus the forward-4mm prefix under path 15
+Slide 10's focused figure uses rest versus the forward-4mm prefix under path 15
 (clockwise circles, rightward traversal). It shows decoded vector separation
 and the Euclidean distance between complete 65-neuron states, not activity
 projections. The time axis begins after the four-second prefixes. The original
@@ -289,18 +384,18 @@ horizontal line in the decoded panel is the required 4-mm separation; add its
 legend in the slide. The state panel's label is shortened to "State distance"
 for layout. The original annotated combined figure remains available.
 
-## Slide 8 working draft: stationary continuation
+## Slide 11 working draft: stationary continuation
 
 **Title:** Displacement memory persists imperfectly during a pause.
 
-Keep slide 7's same frozen standard network and the same four-second histories:
+Keep slide 10's same frozen standard network and the same four-second histories:
 A is stationary; B walks forward 4 mm. Replace the common circular continuation
 with 32 seconds of stationary input at heading 45 degrees. Home remains at the
 original origin, so the required vector separation stays 4 mm. A pause means
 zero translational velocity, not zero PFN activity: the prescribed heading-
 dependent baseline remains, and neural activity continues to evolve.
 
-Use the same two-panel layout and colors as slide 7. Minimal PNG/SVG/PDF panels
+Use the same two-panel layout and colors as slide 10. Minimal PNG/SVG/PDF panels
 are in `results/cx-home-vector-slide08-pause-basic-20261117`, with filenames
 ending `_decoded_basic` and `_state_basic`. No title, legend, setup text or
 endpoint annotations are embedded. The blue-panel dashed line is 4 mm.
@@ -316,8 +411,8 @@ complete forgetting, or evidence of indefinite retention. This is one specified
 pair; the rightward-prefix pause response differs and includes substantial
 directional distortion.
 
-Speaker-note comparison: slide 7 covers 128 seconds, while slide 8 covers 32.
-At a matched 32 seconds, the slide-7 clockwise/rightward movement produces
+Speaker-note comparison: slide 10 covers 128 seconds, while slide 11 covers 32.
+At a matched 32 seconds, the clockwise/rightward movement on slide 10 produces
 0.58-mm separation versus 2.13 mm during the pause for this same prefix pair.
 This supports input-dependent retention in this example without confounding
 input condition with duration. The separation norm alone does not establish
@@ -331,7 +426,7 @@ MPLCONFIGDIR=/tmp/fly-connectome-mpl OPENBLAS_NUM_THREADS=1 \
 --output results/cx-home-vector-slide08-pause-reproduction
 ```
 
-## Slide 10 working draft
+## Slide 13 working draft
 
 **hDeltaB signals travel direction and reflects earlier movement**
 
@@ -369,7 +464,7 @@ angle wrapping or activity-pattern similarity. The
 [hDeltaB methods and results](cx_home_vector_hdeltab_direction.md) give the
 controls and interpretation.
 
-## Slide 11 working draft
+## Slide 14 working draft
 
 **Silencing vDeltaE raises hDeltaG activity, but recovery stays slow**
 
@@ -394,7 +489,7 @@ insufficient to demonstrate faster recovery. The gate stays active across
 the replay, and its contribution to the mismatch remains open. See the
 [methods and results](cx_home_vector_vdeltae_silencing.md).
 
-## Slide 12 working draft
+## Slide 15 working draft
 
 **hDeltaC supports early displacement retention through the recurrent circuit**
 
@@ -416,14 +511,36 @@ Later effects depend on the prior history and the shared input. The
 [methods and results](cx_home_vector_hdeltac_retention.md) describe the full
 vector errors and the limits of the intervention.
 
-## Slide 13 closing statement
+## Slide 16 working draft
 
-> Anatomically constrained learning produced a useful but imperfect movement-
-> history representation. Repeated-return training removed severe accumulation,
-> but the selected standard dynamics also attenuate displacement offsets that
-> exact home tracking requires. The result is compatible with some forms of
-> leaky integration, while reproducing the physiological division of labor among
-> these cell types remains an open empirical/modeling question.
+**Title** — The circuit learned to track home approximately
+
+**What we found**
+
+- The retrained standard network limited drift on repeated circles.
+- During identical later movement, its neural activity and readout
+  increasingly lost a displacement difference that should have persisted.
+- hDeltaB retained a travel-direction signal, vDeltaE silencing failed to
+  reproduce the rapid post-sugar rebound, and hDeltaC supported early
+  displacement retention through the modeled recurrent circuit.
+
+**What remains open**
+
+1. **Model** — Can this circuit keep activity bounded while preserving
+   displacement accurately over long paths?
+2. **Fly** — When does the fly's estimate return toward zero through path
+   integration, and when do sensory cues correct it or set a new home anchor?
+
+In the narration, distinguish cancellation of displacement on a closed path
+from cue-driven correction at a known site and re-anchoring to a new site.
+The standard model's return errors remained nonzero and the sugar variant
+implemented hDeltaG suppression. The two interventions needed to test the
+open questions are different. For the model, test bounded activity and
+retention of nonzero displacement offsets under matched training and
+held-out movement. For the fly, vary the cue independently of physical
+return to the starting point and assess the inferred home vector. If cues
+reliably correct errors, the biological question about stability without
+cues can focus on how long displacement needs to be retained between cues.
 
 ## What is worth mining next, if needed for the biological interpretation?
 
@@ -434,7 +551,7 @@ vector errors and the limits of the intervention.
    alignment for each trajectory to improve agreement.
 2. The first [vDeltaE silencing probe](cx_home_vector_vdeltae_silencing.md)
    raised hDeltaG activity before sugar but did not reproduce the rapid
-   post-sugar rise reported in the fly experiment. Slide 11 shows this
+   post-sugar rise reported in the fly experiment. Slide 14 shows this
    comparison. A quantitative comparison requires an explicit link between
    model rates and the recorded observable.
 3. The [hDeltaC retention probe](cx_home_vector_hdeltac_retention.md) found
@@ -450,6 +567,92 @@ The new retention evidence is sufficient to sharpen the presentation's
 computational conclusion. The biological question remains open rather than
 answered negatively: omitted inputs and different target computations matter,
 and the measured fly signal need not implement our exact nonleaky objective.
+
+## Appendix A1 — How a trajectory trains the circuit and decoder
+
+Use three boxes for the forward pass and a full-width strip for supervision.
+The equations refer to the final paired run.
+
+Transparent equation PNGs and the [LaTeX source](../results/cx-home-vector-appendix-equations-20261118/equations.tex)
+are in `results/cx-home-vector-appendix-equations-20261118`.
+
+1. **Fixed PFN encoding.** Convert heading and forward/rightward velocity
+   into 60 prescribed activities. For PFN `i`, `p_i` is the projection of
+   body velocity onto its preferred translation axis.
+2. **Recurrent update.** Start with zero activity once per trajectory.
+   Combine PFN input, current recurrent activity, and bias, rectify the
+   result, then relax toward it at the population's learned time constant.
+3. **Instantaneous readout.** Predict world-frame `x, y` with one affine
+   map of the current 65-neuron state.
+
+```text
+PFN_i = 0.5 * (1 + cos(heading - preferred_heading_i)) * (1 + 5 * max(0, p_i))
+
+drive = ReLU(W_input * PFN[t] + W_rec * rates[t] + bias)
+rates[t+1] = rates[t] + (1 - exp(-dt / tau)) * (drive - rates[t])
+predicted_vector[t] = D * rates[t] + intercept
+
+correct_vector[t] = starting_position - current_position[t]
+task loss = batch mean of (time mean of squared vector error / E_group)
+```
+
+`dt = 2.5 ms`. The update equation shown is the standard rule. The sugar
+variant adds gate-dependent relaxation toward zero in hDeltaG. The target is
+computed externally by integrating world-frame movement. `E_group` is the
+typical squared target length for that trajectory group, computed from training
+data and kept fixed. Add penalties for activity, edge coefficients moving
+away from initialization, and decoder weights. Backpropagation through
+the complete trajectory updates the edge coefficients, population biases
+and time constants, and decoder weights and intercept together.
+
+## Appendix A2 — How the standard and sugar-response models were compared
+
+| What was matched | Final paired run |
+| --- | --- |
+| Initialization and architecture | Same seed-0 starting parameters, fixed PFN encoder, and anatomical edge support and contact scaling |
+| Training examples | Same trajectory draws and targets for both arms. Equal sampling probability across existing short/mixed routes, long straight walks, two-return routes, and diverse returns. Sample a family, then a variant within the chosen group. |
+| Optimization | Adam with learning rate 0.001, batch size 8, gradient norm clipped at 1, and 2,000 paired updates |
+| Sensory intervention | The standard gate is zero. In the sugar arm, each eligible patch reentry after departure drives hDeltaG suppression. The response uses a 1 s rise constant, a 300 s decay constant, and extra relaxation of up to 1/s toward zero. The home anchor stays fixed in both arms. |
+
+**Selection and evaluation.** Evaluate every 50 updates. Select each arm's
+checkpoint independently by its lowest normalized validation vector MSE,
+before evaluating the test split. Both arms selected update 2,000. The
+dataset contains 2,400 training, 304 validation, and 512 test trajectories.
+The 16-return extensions and familiar circle replays are separate evaluations.
+Report whole-route errors in mm separately from the normalized selection
+score. The paired run uses one seed.
+
+Link to the [archived run configuration](../results/cx-sugar-reliable-return-training-seed0-20261113/training_config.json),
+[run manifest](../results/cx-sugar-reliable-return-training-seed0-20261113/manifest.json),
+and [evaluation report](cx_home_vector_reliable_evaluation_results.md).
+
+## Appendix A3 — How the training routes changed
+
+Use two strips of archived training examples.
+[Early routes and the first two-return addition](../results/cx-home-vector-training-routes-slides-20261118/cx_training_routes_early_and_two_return.png)
+shows the early standard model's three kinds of movement in the first
+three panels and the first paired run's new polygon example in the fourth.
+[Diverse repeated returns](../results/cx-home-vector-training-routes-slides-20261118/cx_training_routes_diverse_repeated_returns.png)
+shows the four route classes added for the final paired run. Open circles
+mark each route's start. Filled dots mark distinct endpoints. Each panel
+has its own distance scale. Both strips are also available as SVG and PDF.
+
+- **Early standard model.** 682 walk-then-pause examples, 342 randomized
+  movement sequences, and 1,024 long straight walks, for 2,048 trajectories.
+  The short circle on slide 4 was a separate evaluation probe.
+- **First paired training.** Added 256 distinct two-lap polygon movements,
+  represented by 512 training records with matched sugar schedules.
+- **Final paired training.** Retained 256 two-return movements with one
+  record per movement and added 96 diverse movements with four or eight
+  returns. The final 2,400 trajectories were sampled using the four equally
+  weighted groups from A2. The 16-return extensions were used in evaluation.
+
+The route chronology describes the training sets. The loss and event
+schedule also changed across runs, so the chronology alone does not isolate
+which change improved repeated-return behavior. See the
+[early model assessment](cx_home_vector_balanced_u2000_assessment.md),
+[first paired evaluation](cx_home_vector_sugar_retrained_loops.md), and
+[final dataset and training report](cx_home_vector_reliable_return_training.md).
 
 ## Evidence provenance and verification
 
